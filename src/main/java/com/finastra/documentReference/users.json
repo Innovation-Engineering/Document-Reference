@@ -1,0 +1,24 @@
+[
+    {
+        "userType":"customer",
+        "firstName":"Ray",
+        "lastName":"Ford",
+        "email": "anon@gmail.com",
+        "address": {
+            "country":"Japan",
+            "city":"Tokyo"
+        },
+        "totalBalance":"0.00"
+    },
+    {
+        "userType":"manager",
+        "firstName":"Jackson",
+        "lastName":"Pilfer",
+        "email": "anon@gmail.com",
+        "address": {
+            "country":"US",
+            "city":"New York"
+        },
+        "totalBalance":"100.00"
+    }
+]  

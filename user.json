@@ -1,0 +1,10 @@
+user = {
+    "firstName":"Ray",
+    "lastName":"Ford",
+    "email": "anon@gmail.com",
+    "address": {
+        "country":"Japan",
+        "city":"Tokyo"
+    },
+    "totalBalance":"0.00"
+}
