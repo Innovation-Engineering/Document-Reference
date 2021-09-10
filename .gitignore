@@ -40,3 +40,6 @@ data/journal/WiredTigerPreplog.0000000002
 data/journal/WiredTigerPreplog.0000000002
 C:\Users\u727317\Desktop\Innovation\Spring\document-reference\data\journal\WiredTigerLog.0000000007
 data/diagnostic.data/metrics.interim
+data/diagnostic.data/metrics.interim
+*.interim
+node_modules

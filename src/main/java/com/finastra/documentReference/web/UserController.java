@@ -44,8 +44,6 @@ public class UserController {
             userRepository.save(new User(newUser.getUserType(),
                     userId, newUser.getEmail(), newUser.getDetails()));
         }
-
-
     }
 
     /**
