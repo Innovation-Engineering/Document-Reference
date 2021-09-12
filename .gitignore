@@ -44,3 +44,4 @@ data/diagnostic.data/metrics.interim
 *.interim
 node_modules
 *.interim
+*.interim
