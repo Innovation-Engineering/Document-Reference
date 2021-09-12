@@ -184,6 +184,2166 @@ function _setPrototypeOf(o, p) {
 
 /***/ }),
 
+/***/ "./node_modules/axios/index.js":
+/*!*************************************!*\
+  !*** ./node_modules/axios/index.js ***!
+  \*************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+module.exports = __webpack_require__(/*! ./lib/axios */ "./node_modules/axios/lib/axios.js");
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/adapters/xhr.js":
+/*!************************************************!*\
+  !*** ./node_modules/axios/lib/adapters/xhr.js ***!
+  \************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+var utils = __webpack_require__(/*! ./../utils */ "./node_modules/axios/lib/utils.js");
+var settle = __webpack_require__(/*! ./../core/settle */ "./node_modules/axios/lib/core/settle.js");
+var cookies = __webpack_require__(/*! ./../helpers/cookies */ "./node_modules/axios/lib/helpers/cookies.js");
+var buildURL = __webpack_require__(/*! ./../helpers/buildURL */ "./node_modules/axios/lib/helpers/buildURL.js");
+var buildFullPath = __webpack_require__(/*! ../core/buildFullPath */ "./node_modules/axios/lib/core/buildFullPath.js");
+var parseHeaders = __webpack_require__(/*! ./../helpers/parseHeaders */ "./node_modules/axios/lib/helpers/parseHeaders.js");
+var isURLSameOrigin = __webpack_require__(/*! ./../helpers/isURLSameOrigin */ "./node_modules/axios/lib/helpers/isURLSameOrigin.js");
+var createError = __webpack_require__(/*! ../core/createError */ "./node_modules/axios/lib/core/createError.js");
+
+module.exports = function xhrAdapter(config) {
+  return new Promise(function dispatchXhrRequest(resolve, reject) {
+    var requestData = config.data;
+    var requestHeaders = config.headers;
+    var responseType = config.responseType;
+
+    if (utils.isFormData(requestData)) {
+      delete requestHeaders['Content-Type']; // Let the browser set it
+    }
+
+    var request = new XMLHttpRequest();
+
+    // HTTP basic authentication
+    if (config.auth) {
+      var username = config.auth.username || '';
+      var password = config.auth.password ? unescape(encodeURIComponent(config.auth.password)) : '';
+      requestHeaders.Authorization = 'Basic ' + btoa(username + ':' + password);
+    }
+
+    var fullPath = buildFullPath(config.baseURL, config.url);
+    request.open(config.method.toUpperCase(), buildURL(fullPath, config.params, config.paramsSerializer), true);
+
+    // Set the request timeout in MS
+    request.timeout = config.timeout;
+
+    function onloadend() {
+      if (!request) {
+        return;
+      }
+      // Prepare the response
+      var responseHeaders = 'getAllResponseHeaders' in request ? parseHeaders(request.getAllResponseHeaders()) : null;
+      var responseData = !responseType || responseType === 'text' ||  responseType === 'json' ?
+        request.responseText : request.response;
+      var response = {
+        data: responseData,
+        status: request.status,
+        statusText: request.statusText,
+        headers: responseHeaders,
+        config: config,
+        request: request
+      };
+
+      settle(resolve, reject, response);
+
+      // Clean up request
+      request = null;
+    }
+
+    if ('onloadend' in request) {
+      // Use onloadend if available
+      request.onloadend = onloadend;
+    } else {
+      // Listen for ready state to emulate onloadend
+      request.onreadystatechange = function handleLoad() {
+        if (!request || request.readyState !== 4) {
+          return;
+        }
+
+        // The request errored out and we didn't get a response, this will be
+        // handled by onerror instead
+        // With one exception: request that using file: protocol, most browsers
+        // will return status as 0 even though it's a successful request
+        if (request.status === 0 && !(request.responseURL && request.responseURL.indexOf('file:') === 0)) {
+          return;
+        }
+        // readystate handler is calling before onerror or ontimeout handlers,
+        // so we should call onloadend on the next 'tick'
+        setTimeout(onloadend);
+      };
+    }
+
+    // Handle browser request cancellation (as opposed to a manual cancellation)
+    request.onabort = function handleAbort() {
+      if (!request) {
+        return;
+      }
+
+      reject(createError('Request aborted', config, 'ECONNABORTED', request));
+
+      // Clean up request
+      request = null;
+    };
+
+    // Handle low level network errors
+    request.onerror = function handleError() {
+      // Real errors are hidden from us by the browser
+      // onerror should only fire if it's a network error
+      reject(createError('Network Error', config, null, request));
+
+      // Clean up request
+      request = null;
+    };
+
+    // Handle timeout
+    request.ontimeout = function handleTimeout() {
+      var timeoutErrorMessage = 'timeout of ' + config.timeout + 'ms exceeded';
+      if (config.timeoutErrorMessage) {
+        timeoutErrorMessage = config.timeoutErrorMessage;
+      }
+      reject(createError(
+        timeoutErrorMessage,
+        config,
+        config.transitional && config.transitional.clarifyTimeoutError ? 'ETIMEDOUT' : 'ECONNABORTED',
+        request));
+
+      // Clean up request
+      request = null;
+    };
+
+    // Add xsrf header
+    // This is only done if running in a standard browser environment.
+    // Specifically not if we're in a web worker, or react-native.
+    if (utils.isStandardBrowserEnv()) {
+      // Add xsrf header
+      var xsrfValue = (config.withCredentials || isURLSameOrigin(fullPath)) && config.xsrfCookieName ?
+        cookies.read(config.xsrfCookieName) :
+        undefined;
+
+      if (xsrfValue) {
+        requestHeaders[config.xsrfHeaderName] = xsrfValue;
+      }
+    }
+
+    // Add headers to the request
+    if ('setRequestHeader' in request) {
+      utils.forEach(requestHeaders, function setRequestHeader(val, key) {
+        if (typeof requestData === 'undefined' && key.toLowerCase() === 'content-type') {
+          // Remove Content-Type if data is undefined
+          delete requestHeaders[key];
+        } else {
+          // Otherwise add header to the request
+          request.setRequestHeader(key, val);
+        }
+      });
+    }
+
+    // Add withCredentials to request if needed
+    if (!utils.isUndefined(config.withCredentials)) {
+      request.withCredentials = !!config.withCredentials;
+    }
+
+    // Add responseType to request if needed
+    if (responseType && responseType !== 'json') {
+      request.responseType = config.responseType;
+    }
+
+    // Handle progress if needed
+    if (typeof config.onDownloadProgress === 'function') {
+      request.addEventListener('progress', config.onDownloadProgress);
+    }
+
+    // Not all browsers support upload events
+    if (typeof config.onUploadProgress === 'function' && request.upload) {
+      request.upload.addEventListener('progress', config.onUploadProgress);
+    }
+
+    if (config.cancelToken) {
+      // Handle cancellation
+      config.cancelToken.promise.then(function onCanceled(cancel) {
+        if (!request) {
+          return;
+        }
+
+        request.abort();
+        reject(cancel);
+        // Clean up request
+        request = null;
+      });
+    }
+
+    if (!requestData) {
+      requestData = null;
+    }
+
+    // Send the request
+    request.send(requestData);
+  });
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/axios.js":
+/*!*****************************************!*\
+  !*** ./node_modules/axios/lib/axios.js ***!
+  \*****************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+var utils = __webpack_require__(/*! ./utils */ "./node_modules/axios/lib/utils.js");
+var bind = __webpack_require__(/*! ./helpers/bind */ "./node_modules/axios/lib/helpers/bind.js");
+var Axios = __webpack_require__(/*! ./core/Axios */ "./node_modules/axios/lib/core/Axios.js");
+var mergeConfig = __webpack_require__(/*! ./core/mergeConfig */ "./node_modules/axios/lib/core/mergeConfig.js");
+var defaults = __webpack_require__(/*! ./defaults */ "./node_modules/axios/lib/defaults.js");
+
+/**
+ * Create an instance of Axios
+ *
+ * @param {Object} defaultConfig The default config for the instance
+ * @return {Axios} A new instance of Axios
+ */
+function createInstance(defaultConfig) {
+  var context = new Axios(defaultConfig);
+  var instance = bind(Axios.prototype.request, context);
+
+  // Copy axios.prototype to instance
+  utils.extend(instance, Axios.prototype, context);
+
+  // Copy context to instance
+  utils.extend(instance, context);
+
+  return instance;
+}
+
+// Create the default instance to be exported
+var axios = createInstance(defaults);
+
+// Expose Axios class to allow class inheritance
+axios.Axios = Axios;
+
+// Factory for creating new instances
+axios.create = function create(instanceConfig) {
+  return createInstance(mergeConfig(axios.defaults, instanceConfig));
+};
+
+// Expose Cancel & CancelToken
+axios.Cancel = __webpack_require__(/*! ./cancel/Cancel */ "./node_modules/axios/lib/cancel/Cancel.js");
+axios.CancelToken = __webpack_require__(/*! ./cancel/CancelToken */ "./node_modules/axios/lib/cancel/CancelToken.js");
+axios.isCancel = __webpack_require__(/*! ./cancel/isCancel */ "./node_modules/axios/lib/cancel/isCancel.js");
+
+// Expose all/spread
+axios.all = function all(promises) {
+  return Promise.all(promises);
+};
+axios.spread = __webpack_require__(/*! ./helpers/spread */ "./node_modules/axios/lib/helpers/spread.js");
+
+// Expose isAxiosError
+axios.isAxiosError = __webpack_require__(/*! ./helpers/isAxiosError */ "./node_modules/axios/lib/helpers/isAxiosError.js");
+
+module.exports = axios;
+
+// Allow use of default import syntax in TypeScript
+module.exports.default = axios;
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/cancel/Cancel.js":
+/*!*************************************************!*\
+  !*** ./node_modules/axios/lib/cancel/Cancel.js ***!
+  \*************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+/**
+ * A `Cancel` is an object that is thrown when an operation is canceled.
+ *
+ * @class
+ * @param {string=} message The message.
+ */
+function Cancel(message) {
+  this.message = message;
+}
+
+Cancel.prototype.toString = function toString() {
+  return 'Cancel' + (this.message ? ': ' + this.message : '');
+};
+
+Cancel.prototype.__CANCEL__ = true;
+
+module.exports = Cancel;
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/cancel/CancelToken.js":
+/*!******************************************************!*\
+  !*** ./node_modules/axios/lib/cancel/CancelToken.js ***!
+  \******************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+var Cancel = __webpack_require__(/*! ./Cancel */ "./node_modules/axios/lib/cancel/Cancel.js");
+
+/**
+ * A `CancelToken` is an object that can be used to request cancellation of an operation.
+ *
+ * @class
+ * @param {Function} executor The executor function.
+ */
+function CancelToken(executor) {
+  if (typeof executor !== 'function') {
+    throw new TypeError('executor must be a function.');
+  }
+
+  var resolvePromise;
+  this.promise = new Promise(function promiseExecutor(resolve) {
+    resolvePromise = resolve;
+  });
+
+  var token = this;
+  executor(function cancel(message) {
+    if (token.reason) {
+      // Cancellation has already been requested
+      return;
+    }
+
+    token.reason = new Cancel(message);
+    resolvePromise(token.reason);
+  });
+}
+
+/**
+ * Throws a `Cancel` if cancellation has been requested.
+ */
+CancelToken.prototype.throwIfRequested = function throwIfRequested() {
+  if (this.reason) {
+    throw this.reason;
+  }
+};
+
+/**
+ * Returns an object that contains a new `CancelToken` and a function that, when called,
+ * cancels the `CancelToken`.
+ */
+CancelToken.source = function source() {
+  var cancel;
+  var token = new CancelToken(function executor(c) {
+    cancel = c;
+  });
+  return {
+    token: token,
+    cancel: cancel
+  };
+};
+
+module.exports = CancelToken;
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/cancel/isCancel.js":
+/*!***************************************************!*\
+  !*** ./node_modules/axios/lib/cancel/isCancel.js ***!
+  \***************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+module.exports = function isCancel(value) {
+  return !!(value && value.__CANCEL__);
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/core/Axios.js":
+/*!**********************************************!*\
+  !*** ./node_modules/axios/lib/core/Axios.js ***!
+  \**********************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+var utils = __webpack_require__(/*! ./../utils */ "./node_modules/axios/lib/utils.js");
+var buildURL = __webpack_require__(/*! ../helpers/buildURL */ "./node_modules/axios/lib/helpers/buildURL.js");
+var InterceptorManager = __webpack_require__(/*! ./InterceptorManager */ "./node_modules/axios/lib/core/InterceptorManager.js");
+var dispatchRequest = __webpack_require__(/*! ./dispatchRequest */ "./node_modules/axios/lib/core/dispatchRequest.js");
+var mergeConfig = __webpack_require__(/*! ./mergeConfig */ "./node_modules/axios/lib/core/mergeConfig.js");
+var validator = __webpack_require__(/*! ../helpers/validator */ "./node_modules/axios/lib/helpers/validator.js");
+
+var validators = validator.validators;
+/**
+ * Create a new instance of Axios
+ *
+ * @param {Object} instanceConfig The default config for the instance
+ */
+function Axios(instanceConfig) {
+  this.defaults = instanceConfig;
+  this.interceptors = {
+    request: new InterceptorManager(),
+    response: new InterceptorManager()
+  };
+}
+
+/**
+ * Dispatch a request
+ *
+ * @param {Object} config The config specific for this request (merged with this.defaults)
+ */
+Axios.prototype.request = function request(config) {
+  /*eslint no-param-reassign:0*/
+  // Allow for axios('example/url'[, config]) a la fetch API
+  if (typeof config === 'string') {
+    config = arguments[1] || {};
+    config.url = arguments[0];
+  } else {
+    config = config || {};
+  }
+
+  config = mergeConfig(this.defaults, config);
+
+  // Set config.method
+  if (config.method) {
+    config.method = config.method.toLowerCase();
+  } else if (this.defaults.method) {
+    config.method = this.defaults.method.toLowerCase();
+  } else {
+    config.method = 'get';
+  }
+
+  var transitional = config.transitional;
+
+  if (transitional !== undefined) {
+    validator.assertOptions(transitional, {
+      silentJSONParsing: validators.transitional(validators.boolean, '1.0.0'),
+      forcedJSONParsing: validators.transitional(validators.boolean, '1.0.0'),
+      clarifyTimeoutError: validators.transitional(validators.boolean, '1.0.0')
+    }, false);
+  }
+
+  // filter out skipped interceptors
+  var requestInterceptorChain = [];
+  var synchronousRequestInterceptors = true;
+  this.interceptors.request.forEach(function unshiftRequestInterceptors(interceptor) {
+    if (typeof interceptor.runWhen === 'function' && interceptor.runWhen(config) === false) {
+      return;
+    }
+
+    synchronousRequestInterceptors = synchronousRequestInterceptors && interceptor.synchronous;
+
+    requestInterceptorChain.unshift(interceptor.fulfilled, interceptor.rejected);
+  });
+
+  var responseInterceptorChain = [];
+  this.interceptors.response.forEach(function pushResponseInterceptors(interceptor) {
+    responseInterceptorChain.push(interceptor.fulfilled, interceptor.rejected);
+  });
+
+  var promise;
+
+  if (!synchronousRequestInterceptors) {
+    var chain = [dispatchRequest, undefined];
+
+    Array.prototype.unshift.apply(chain, requestInterceptorChain);
+    chain = chain.concat(responseInterceptorChain);
+
+    promise = Promise.resolve(config);
+    while (chain.length) {
+      promise = promise.then(chain.shift(), chain.shift());
+    }
+
+    return promise;
+  }
+
+
+  var newConfig = config;
+  while (requestInterceptorChain.length) {
+    var onFulfilled = requestInterceptorChain.shift();
+    var onRejected = requestInterceptorChain.shift();
+    try {
+      newConfig = onFulfilled(newConfig);
+    } catch (error) {
+      onRejected(error);
+      break;
+    }
+  }
+
+  try {
+    promise = dispatchRequest(newConfig);
+  } catch (error) {
+    return Promise.reject(error);
+  }
+
+  while (responseInterceptorChain.length) {
+    promise = promise.then(responseInterceptorChain.shift(), responseInterceptorChain.shift());
+  }
+
+  return promise;
+};
+
+Axios.prototype.getUri = function getUri(config) {
+  config = mergeConfig(this.defaults, config);
+  return buildURL(config.url, config.params, config.paramsSerializer).replace(/^\?/, '');
+};
+
+// Provide aliases for supported request methods
+utils.forEach(['delete', 'get', 'head', 'options'], function forEachMethodNoData(method) {
+  /*eslint func-names:0*/
+  Axios.prototype[method] = function(url, config) {
+    return this.request(mergeConfig(config || {}, {
+      method: method,
+      url: url,
+      data: (config || {}).data
+    }));
+  };
+});
+
+utils.forEach(['post', 'put', 'patch'], function forEachMethodWithData(method) {
+  /*eslint func-names:0*/
+  Axios.prototype[method] = function(url, data, config) {
+    return this.request(mergeConfig(config || {}, {
+      method: method,
+      url: url,
+      data: data
+    }));
+  };
+});
+
+module.exports = Axios;
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/core/InterceptorManager.js":
+/*!***********************************************************!*\
+  !*** ./node_modules/axios/lib/core/InterceptorManager.js ***!
+  \***********************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+var utils = __webpack_require__(/*! ./../utils */ "./node_modules/axios/lib/utils.js");
+
+function InterceptorManager() {
+  this.handlers = [];
+}
+
+/**
+ * Add a new interceptor to the stack
+ *
+ * @param {Function} fulfilled The function to handle `then` for a `Promise`
+ * @param {Function} rejected The function to handle `reject` for a `Promise`
+ *
+ * @return {Number} An ID used to remove interceptor later
+ */
+InterceptorManager.prototype.use = function use(fulfilled, rejected, options) {
+  this.handlers.push({
+    fulfilled: fulfilled,
+    rejected: rejected,
+    synchronous: options ? options.synchronous : false,
+    runWhen: options ? options.runWhen : null
+  });
+  return this.handlers.length - 1;
+};
+
+/**
+ * Remove an interceptor from the stack
+ *
+ * @param {Number} id The ID that was returned by `use`
+ */
+InterceptorManager.prototype.eject = function eject(id) {
+  if (this.handlers[id]) {
+    this.handlers[id] = null;
+  }
+};
+
+/**
+ * Iterate over all the registered interceptors
+ *
+ * This method is particularly useful for skipping over any
+ * interceptors that may have become `null` calling `eject`.
+ *
+ * @param {Function} fn The function to call for each interceptor
+ */
+InterceptorManager.prototype.forEach = function forEach(fn) {
+  utils.forEach(this.handlers, function forEachHandler(h) {
+    if (h !== null) {
+      fn(h);
+    }
+  });
+};
+
+module.exports = InterceptorManager;
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/core/buildFullPath.js":
+/*!******************************************************!*\
+  !*** ./node_modules/axios/lib/core/buildFullPath.js ***!
+  \******************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+var isAbsoluteURL = __webpack_require__(/*! ../helpers/isAbsoluteURL */ "./node_modules/axios/lib/helpers/isAbsoluteURL.js");
+var combineURLs = __webpack_require__(/*! ../helpers/combineURLs */ "./node_modules/axios/lib/helpers/combineURLs.js");
+
+/**
+ * Creates a new URL by combining the baseURL with the requestedURL,
+ * only when the requestedURL is not already an absolute URL.
+ * If the requestURL is absolute, this function returns the requestedURL untouched.
+ *
+ * @param {string} baseURL The base URL
+ * @param {string} requestedURL Absolute or relative URL to combine
+ * @returns {string} The combined full path
+ */
+module.exports = function buildFullPath(baseURL, requestedURL) {
+  if (baseURL && !isAbsoluteURL(requestedURL)) {
+    return combineURLs(baseURL, requestedURL);
+  }
+  return requestedURL;
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/core/createError.js":
+/*!****************************************************!*\
+  !*** ./node_modules/axios/lib/core/createError.js ***!
+  \****************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+var enhanceError = __webpack_require__(/*! ./enhanceError */ "./node_modules/axios/lib/core/enhanceError.js");
+
+/**
+ * Create an Error with the specified message, config, error code, request and response.
+ *
+ * @param {string} message The error message.
+ * @param {Object} config The config.
+ * @param {string} [code] The error code (for example, 'ECONNABORTED').
+ * @param {Object} [request] The request.
+ * @param {Object} [response] The response.
+ * @returns {Error} The created error.
+ */
+module.exports = function createError(message, config, code, request, response) {
+  var error = new Error(message);
+  return enhanceError(error, config, code, request, response);
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/core/dispatchRequest.js":
+/*!********************************************************!*\
+  !*** ./node_modules/axios/lib/core/dispatchRequest.js ***!
+  \********************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+var utils = __webpack_require__(/*! ./../utils */ "./node_modules/axios/lib/utils.js");
+var transformData = __webpack_require__(/*! ./transformData */ "./node_modules/axios/lib/core/transformData.js");
+var isCancel = __webpack_require__(/*! ../cancel/isCancel */ "./node_modules/axios/lib/cancel/isCancel.js");
+var defaults = __webpack_require__(/*! ../defaults */ "./node_modules/axios/lib/defaults.js");
+
+/**
+ * Throws a `Cancel` if cancellation has been requested.
+ */
+function throwIfCancellationRequested(config) {
+  if (config.cancelToken) {
+    config.cancelToken.throwIfRequested();
+  }
+}
+
+/**
+ * Dispatch a request to the server using the configured adapter.
+ *
+ * @param {object} config The config that is to be used for the request
+ * @returns {Promise} The Promise to be fulfilled
+ */
+module.exports = function dispatchRequest(config) {
+  throwIfCancellationRequested(config);
+
+  // Ensure headers exist
+  config.headers = config.headers || {};
+
+  // Transform request data
+  config.data = transformData.call(
+    config,
+    config.data,
+    config.headers,
+    config.transformRequest
+  );
+
+  // Flatten headers
+  config.headers = utils.merge(
+    config.headers.common || {},
+    config.headers[config.method] || {},
+    config.headers
+  );
+
+  utils.forEach(
+    ['delete', 'get', 'head', 'post', 'put', 'patch', 'common'],
+    function cleanHeaderConfig(method) {
+      delete config.headers[method];
+    }
+  );
+
+  var adapter = config.adapter || defaults.adapter;
+
+  return adapter(config).then(function onAdapterResolution(response) {
+    throwIfCancellationRequested(config);
+
+    // Transform response data
+    response.data = transformData.call(
+      config,
+      response.data,
+      response.headers,
+      config.transformResponse
+    );
+
+    return response;
+  }, function onAdapterRejection(reason) {
+    if (!isCancel(reason)) {
+      throwIfCancellationRequested(config);
+
+      // Transform response data
+      if (reason && reason.response) {
+        reason.response.data = transformData.call(
+          config,
+          reason.response.data,
+          reason.response.headers,
+          config.transformResponse
+        );
+      }
+    }
+
+    return Promise.reject(reason);
+  });
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/core/enhanceError.js":
+/*!*****************************************************!*\
+  !*** ./node_modules/axios/lib/core/enhanceError.js ***!
+  \*****************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+/**
+ * Update an Error with the specified config, error code, and response.
+ *
+ * @param {Error} error The error to update.
+ * @param {Object} config The config.
+ * @param {string} [code] The error code (for example, 'ECONNABORTED').
+ * @param {Object} [request] The request.
+ * @param {Object} [response] The response.
+ * @returns {Error} The error.
+ */
+module.exports = function enhanceError(error, config, code, request, response) {
+  error.config = config;
+  if (code) {
+    error.code = code;
+  }
+
+  error.request = request;
+  error.response = response;
+  error.isAxiosError = true;
+
+  error.toJSON = function toJSON() {
+    return {
+      // Standard
+      message: this.message,
+      name: this.name,
+      // Microsoft
+      description: this.description,
+      number: this.number,
+      // Mozilla
+      fileName: this.fileName,
+      lineNumber: this.lineNumber,
+      columnNumber: this.columnNumber,
+      stack: this.stack,
+      // Axios
+      config: this.config,
+      code: this.code
+    };
+  };
+  return error;
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/core/mergeConfig.js":
+/*!****************************************************!*\
+  !*** ./node_modules/axios/lib/core/mergeConfig.js ***!
+  \****************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+var utils = __webpack_require__(/*! ../utils */ "./node_modules/axios/lib/utils.js");
+
+/**
+ * Config-specific merge-function which creates a new config-object
+ * by merging two configuration objects together.
+ *
+ * @param {Object} config1
+ * @param {Object} config2
+ * @returns {Object} New object resulting from merging config2 to config1
+ */
+module.exports = function mergeConfig(config1, config2) {
+  // eslint-disable-next-line no-param-reassign
+  config2 = config2 || {};
+  var config = {};
+
+  var valueFromConfig2Keys = ['url', 'method', 'data'];
+  var mergeDeepPropertiesKeys = ['headers', 'auth', 'proxy', 'params'];
+  var defaultToConfig2Keys = [
+    'baseURL', 'transformRequest', 'transformResponse', 'paramsSerializer',
+    'timeout', 'timeoutMessage', 'withCredentials', 'adapter', 'responseType', 'xsrfCookieName',
+    'xsrfHeaderName', 'onUploadProgress', 'onDownloadProgress', 'decompress',
+    'maxContentLength', 'maxBodyLength', 'maxRedirects', 'transport', 'httpAgent',
+    'httpsAgent', 'cancelToken', 'socketPath', 'responseEncoding'
+  ];
+  var directMergeKeys = ['validateStatus'];
+
+  function getMergedValue(target, source) {
+    if (utils.isPlainObject(target) && utils.isPlainObject(source)) {
+      return utils.merge(target, source);
+    } else if (utils.isPlainObject(source)) {
+      return utils.merge({}, source);
+    } else if (utils.isArray(source)) {
+      return source.slice();
+    }
+    return source;
+  }
+
+  function mergeDeepProperties(prop) {
+    if (!utils.isUndefined(config2[prop])) {
+      config[prop] = getMergedValue(config1[prop], config2[prop]);
+    } else if (!utils.isUndefined(config1[prop])) {
+      config[prop] = getMergedValue(undefined, config1[prop]);
+    }
+  }
+
+  utils.forEach(valueFromConfig2Keys, function valueFromConfig2(prop) {
+    if (!utils.isUndefined(config2[prop])) {
+      config[prop] = getMergedValue(undefined, config2[prop]);
+    }
+  });
+
+  utils.forEach(mergeDeepPropertiesKeys, mergeDeepProperties);
+
+  utils.forEach(defaultToConfig2Keys, function defaultToConfig2(prop) {
+    if (!utils.isUndefined(config2[prop])) {
+      config[prop] = getMergedValue(undefined, config2[prop]);
+    } else if (!utils.isUndefined(config1[prop])) {
+      config[prop] = getMergedValue(undefined, config1[prop]);
+    }
+  });
+
+  utils.forEach(directMergeKeys, function merge(prop) {
+    if (prop in config2) {
+      config[prop] = getMergedValue(config1[prop], config2[prop]);
+    } else if (prop in config1) {
+      config[prop] = getMergedValue(undefined, config1[prop]);
+    }
+  });
+
+  var axiosKeys = valueFromConfig2Keys
+    .concat(mergeDeepPropertiesKeys)
+    .concat(defaultToConfig2Keys)
+    .concat(directMergeKeys);
+
+  var otherKeys = Object
+    .keys(config1)
+    .concat(Object.keys(config2))
+    .filter(function filterAxiosKeys(key) {
+      return axiosKeys.indexOf(key) === -1;
+    });
+
+  utils.forEach(otherKeys, mergeDeepProperties);
+
+  return config;
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/core/settle.js":
+/*!***********************************************!*\
+  !*** ./node_modules/axios/lib/core/settle.js ***!
+  \***********************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+var createError = __webpack_require__(/*! ./createError */ "./node_modules/axios/lib/core/createError.js");
+
+/**
+ * Resolve or reject a Promise based on response status.
+ *
+ * @param {Function} resolve A function that resolves the promise.
+ * @param {Function} reject A function that rejects the promise.
+ * @param {object} response The response.
+ */
+module.exports = function settle(resolve, reject, response) {
+  var validateStatus = response.config.validateStatus;
+  if (!response.status || !validateStatus || validateStatus(response.status)) {
+    resolve(response);
+  } else {
+    reject(createError(
+      'Request failed with status code ' + response.status,
+      response.config,
+      null,
+      response.request,
+      response
+    ));
+  }
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/core/transformData.js":
+/*!******************************************************!*\
+  !*** ./node_modules/axios/lib/core/transformData.js ***!
+  \******************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+var utils = __webpack_require__(/*! ./../utils */ "./node_modules/axios/lib/utils.js");
+var defaults = __webpack_require__(/*! ./../defaults */ "./node_modules/axios/lib/defaults.js");
+
+/**
+ * Transform the data for a request or a response
+ *
+ * @param {Object|String} data The data to be transformed
+ * @param {Array} headers The headers for the request or response
+ * @param {Array|Function} fns A single function or Array of functions
+ * @returns {*} The resulting transformed data
+ */
+module.exports = function transformData(data, headers, fns) {
+  var context = this || defaults;
+  /*eslint no-param-reassign:0*/
+  utils.forEach(fns, function transform(fn) {
+    data = fn.call(context, data, headers);
+  });
+
+  return data;
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/defaults.js":
+/*!********************************************!*\
+  !*** ./node_modules/axios/lib/defaults.js ***!
+  \********************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+/* WEBPACK VAR INJECTION */(function(process) {
+
+var utils = __webpack_require__(/*! ./utils */ "./node_modules/axios/lib/utils.js");
+var normalizeHeaderName = __webpack_require__(/*! ./helpers/normalizeHeaderName */ "./node_modules/axios/lib/helpers/normalizeHeaderName.js");
+var enhanceError = __webpack_require__(/*! ./core/enhanceError */ "./node_modules/axios/lib/core/enhanceError.js");
+
+var DEFAULT_CONTENT_TYPE = {
+  'Content-Type': 'application/x-www-form-urlencoded'
+};
+
+function setContentTypeIfUnset(headers, value) {
+  if (!utils.isUndefined(headers) && utils.isUndefined(headers['Content-Type'])) {
+    headers['Content-Type'] = value;
+  }
+}
+
+function getDefaultAdapter() {
+  var adapter;
+  if (typeof XMLHttpRequest !== 'undefined') {
+    // For browsers use XHR adapter
+    adapter = __webpack_require__(/*! ./adapters/xhr */ "./node_modules/axios/lib/adapters/xhr.js");
+  } else if (typeof process !== 'undefined' && Object.prototype.toString.call(process) === '[object process]') {
+    // For node use HTTP adapter
+    adapter = __webpack_require__(/*! ./adapters/http */ "./node_modules/axios/lib/adapters/xhr.js");
+  }
+  return adapter;
+}
+
+function stringifySafely(rawValue, parser, encoder) {
+  if (utils.isString(rawValue)) {
+    try {
+      (parser || JSON.parse)(rawValue);
+      return utils.trim(rawValue);
+    } catch (e) {
+      if (e.name !== 'SyntaxError') {
+        throw e;
+      }
+    }
+  }
+
+  return (encoder || JSON.stringify)(rawValue);
+}
+
+var defaults = {
+
+  transitional: {
+    silentJSONParsing: true,
+    forcedJSONParsing: true,
+    clarifyTimeoutError: false
+  },
+
+  adapter: getDefaultAdapter(),
+
+  transformRequest: [function transformRequest(data, headers) {
+    normalizeHeaderName(headers, 'Accept');
+    normalizeHeaderName(headers, 'Content-Type');
+
+    if (utils.isFormData(data) ||
+      utils.isArrayBuffer(data) ||
+      utils.isBuffer(data) ||
+      utils.isStream(data) ||
+      utils.isFile(data) ||
+      utils.isBlob(data)
+    ) {
+      return data;
+    }
+    if (utils.isArrayBufferView(data)) {
+      return data.buffer;
+    }
+    if (utils.isURLSearchParams(data)) {
+      setContentTypeIfUnset(headers, 'application/x-www-form-urlencoded;charset=utf-8');
+      return data.toString();
+    }
+    if (utils.isObject(data) || (headers && headers['Content-Type'] === 'application/json')) {
+      setContentTypeIfUnset(headers, 'application/json');
+      return stringifySafely(data);
+    }
+    return data;
+  }],
+
+  transformResponse: [function transformResponse(data) {
+    var transitional = this.transitional;
+    var silentJSONParsing = transitional && transitional.silentJSONParsing;
+    var forcedJSONParsing = transitional && transitional.forcedJSONParsing;
+    var strictJSONParsing = !silentJSONParsing && this.responseType === 'json';
+
+    if (strictJSONParsing || (forcedJSONParsing && utils.isString(data) && data.length)) {
+      try {
+        return JSON.parse(data);
+      } catch (e) {
+        if (strictJSONParsing) {
+          if (e.name === 'SyntaxError') {
+            throw enhanceError(e, this, 'E_JSON_PARSE');
+          }
+          throw e;
+        }
+      }
+    }
+
+    return data;
+  }],
+
+  /**
+   * A timeout in milliseconds to abort a request. If set to 0 (default) a
+   * timeout is not created.
+   */
+  timeout: 0,
+
+  xsrfCookieName: 'XSRF-TOKEN',
+  xsrfHeaderName: 'X-XSRF-TOKEN',
+
+  maxContentLength: -1,
+  maxBodyLength: -1,
+
+  validateStatus: function validateStatus(status) {
+    return status >= 200 && status < 300;
+  }
+};
+
+defaults.headers = {
+  common: {
+    'Accept': 'application/json, text/plain, */*'
+  }
+};
+
+utils.forEach(['delete', 'get', 'head'], function forEachMethodNoData(method) {
+  defaults.headers[method] = {};
+});
+
+utils.forEach(['post', 'put', 'patch'], function forEachMethodWithData(method) {
+  defaults.headers[method] = utils.merge(DEFAULT_CONTENT_TYPE);
+});
+
+module.exports = defaults;
+
+/* WEBPACK VAR INJECTION */}.call(this, __webpack_require__(/*! ./../../process/browser.js */ "./node_modules/process/browser.js")))
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/helpers/bind.js":
+/*!************************************************!*\
+  !*** ./node_modules/axios/lib/helpers/bind.js ***!
+  \************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+module.exports = function bind(fn, thisArg) {
+  return function wrap() {
+    var args = new Array(arguments.length);
+    for (var i = 0; i < args.length; i++) {
+      args[i] = arguments[i];
+    }
+    return fn.apply(thisArg, args);
+  };
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/helpers/buildURL.js":
+/*!****************************************************!*\
+  !*** ./node_modules/axios/lib/helpers/buildURL.js ***!
+  \****************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+var utils = __webpack_require__(/*! ./../utils */ "./node_modules/axios/lib/utils.js");
+
+function encode(val) {
+  return encodeURIComponent(val).
+    replace(/%3A/gi, ':').
+    replace(/%24/g, '$').
+    replace(/%2C/gi, ',').
+    replace(/%20/g, '+').
+    replace(/%5B/gi, '[').
+    replace(/%5D/gi, ']');
+}
+
+/**
+ * Build a URL by appending params to the end
+ *
+ * @param {string} url The base of the url (e.g., http://www.google.com)
+ * @param {object} [params] The params to be appended
+ * @returns {string} The formatted url
+ */
+module.exports = function buildURL(url, params, paramsSerializer) {
+  /*eslint no-param-reassign:0*/
+  if (!params) {
+    return url;
+  }
+
+  var serializedParams;
+  if (paramsSerializer) {
+    serializedParams = paramsSerializer(params);
+  } else if (utils.isURLSearchParams(params)) {
+    serializedParams = params.toString();
+  } else {
+    var parts = [];
+
+    utils.forEach(params, function serialize(val, key) {
+      if (val === null || typeof val === 'undefined') {
+        return;
+      }
+
+      if (utils.isArray(val)) {
+        key = key + '[]';
+      } else {
+        val = [val];
+      }
+
+      utils.forEach(val, function parseValue(v) {
+        if (utils.isDate(v)) {
+          v = v.toISOString();
+        } else if (utils.isObject(v)) {
+          v = JSON.stringify(v);
+        }
+        parts.push(encode(key) + '=' + encode(v));
+      });
+    });
+
+    serializedParams = parts.join('&');
+  }
+
+  if (serializedParams) {
+    var hashmarkIndex = url.indexOf('#');
+    if (hashmarkIndex !== -1) {
+      url = url.slice(0, hashmarkIndex);
+    }
+
+    url += (url.indexOf('?') === -1 ? '?' : '&') + serializedParams;
+  }
+
+  return url;
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/helpers/combineURLs.js":
+/*!*******************************************************!*\
+  !*** ./node_modules/axios/lib/helpers/combineURLs.js ***!
+  \*******************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+/**
+ * Creates a new URL by combining the specified URLs
+ *
+ * @param {string} baseURL The base URL
+ * @param {string} relativeURL The relative URL
+ * @returns {string} The combined URL
+ */
+module.exports = function combineURLs(baseURL, relativeURL) {
+  return relativeURL
+    ? baseURL.replace(/\/+$/, '') + '/' + relativeURL.replace(/^\/+/, '')
+    : baseURL;
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/helpers/cookies.js":
+/*!***************************************************!*\
+  !*** ./node_modules/axios/lib/helpers/cookies.js ***!
+  \***************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+var utils = __webpack_require__(/*! ./../utils */ "./node_modules/axios/lib/utils.js");
+
+module.exports = (
+  utils.isStandardBrowserEnv() ?
+
+  // Standard browser envs support document.cookie
+    (function standardBrowserEnv() {
+      return {
+        write: function write(name, value, expires, path, domain, secure) {
+          var cookie = [];
+          cookie.push(name + '=' + encodeURIComponent(value));
+
+          if (utils.isNumber(expires)) {
+            cookie.push('expires=' + new Date(expires).toGMTString());
+          }
+
+          if (utils.isString(path)) {
+            cookie.push('path=' + path);
+          }
+
+          if (utils.isString(domain)) {
+            cookie.push('domain=' + domain);
+          }
+
+          if (secure === true) {
+            cookie.push('secure');
+          }
+
+          document.cookie = cookie.join('; ');
+        },
+
+        read: function read(name) {
+          var match = document.cookie.match(new RegExp('(^|;\\s*)(' + name + ')=([^;]*)'));
+          return (match ? decodeURIComponent(match[3]) : null);
+        },
+
+        remove: function remove(name) {
+          this.write(name, '', Date.now() - 86400000);
+        }
+      };
+    })() :
+
+  // Non standard browser env (web workers, react-native) lack needed support.
+    (function nonStandardBrowserEnv() {
+      return {
+        write: function write() {},
+        read: function read() { return null; },
+        remove: function remove() {}
+      };
+    })()
+);
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/helpers/isAbsoluteURL.js":
+/*!*********************************************************!*\
+  !*** ./node_modules/axios/lib/helpers/isAbsoluteURL.js ***!
+  \*********************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+/**
+ * Determines whether the specified URL is absolute
+ *
+ * @param {string} url The URL to test
+ * @returns {boolean} True if the specified URL is absolute, otherwise false
+ */
+module.exports = function isAbsoluteURL(url) {
+  // A URL is considered absolute if it begins with "<scheme>://" or "//" (protocol-relative URL).
+  // RFC 3986 defines scheme name as a sequence of characters beginning with a letter and followed
+  // by any combination of letters, digits, plus, period, or hyphen.
+  return /^([a-z][a-z\d\+\-\.]*:)?\/\//i.test(url);
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/helpers/isAxiosError.js":
+/*!********************************************************!*\
+  !*** ./node_modules/axios/lib/helpers/isAxiosError.js ***!
+  \********************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+/**
+ * Determines whether the payload is an error thrown by Axios
+ *
+ * @param {*} payload The value to test
+ * @returns {boolean} True if the payload is an error thrown by Axios, otherwise false
+ */
+module.exports = function isAxiosError(payload) {
+  return (typeof payload === 'object') && (payload.isAxiosError === true);
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/helpers/isURLSameOrigin.js":
+/*!***********************************************************!*\
+  !*** ./node_modules/axios/lib/helpers/isURLSameOrigin.js ***!
+  \***********************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+var utils = __webpack_require__(/*! ./../utils */ "./node_modules/axios/lib/utils.js");
+
+module.exports = (
+  utils.isStandardBrowserEnv() ?
+
+  // Standard browser envs have full support of the APIs needed to test
+  // whether the request URL is of the same origin as current location.
+    (function standardBrowserEnv() {
+      var msie = /(msie|trident)/i.test(navigator.userAgent);
+      var urlParsingNode = document.createElement('a');
+      var originURL;
+
+      /**
+    * Parse a URL to discover it's components
+    *
+    * @param {String} url The URL to be parsed
+    * @returns {Object}
+    */
+      function resolveURL(url) {
+        var href = url;
+
+        if (msie) {
+        // IE needs attribute set twice to normalize properties
+          urlParsingNode.setAttribute('href', href);
+          href = urlParsingNode.href;
+        }
+
+        urlParsingNode.setAttribute('href', href);
+
+        // urlParsingNode provides the UrlUtils interface - http://url.spec.whatwg.org/#urlutils
+        return {
+          href: urlParsingNode.href,
+          protocol: urlParsingNode.protocol ? urlParsingNode.protocol.replace(/:$/, '') : '',
+          host: urlParsingNode.host,
+          search: urlParsingNode.search ? urlParsingNode.search.replace(/^\?/, '') : '',
+          hash: urlParsingNode.hash ? urlParsingNode.hash.replace(/^#/, '') : '',
+          hostname: urlParsingNode.hostname,
+          port: urlParsingNode.port,
+          pathname: (urlParsingNode.pathname.charAt(0) === '/') ?
+            urlParsingNode.pathname :
+            '/' + urlParsingNode.pathname
+        };
+      }
+
+      originURL = resolveURL(window.location.href);
+
+      /**
+    * Determine if a URL shares the same origin as the current location
+    *
+    * @param {String} requestURL The URL to test
+    * @returns {boolean} True if URL shares the same origin, otherwise false
+    */
+      return function isURLSameOrigin(requestURL) {
+        var parsed = (utils.isString(requestURL)) ? resolveURL(requestURL) : requestURL;
+        return (parsed.protocol === originURL.protocol &&
+            parsed.host === originURL.host);
+      };
+    })() :
+
+  // Non standard browser envs (web workers, react-native) lack needed support.
+    (function nonStandardBrowserEnv() {
+      return function isURLSameOrigin() {
+        return true;
+      };
+    })()
+);
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/helpers/normalizeHeaderName.js":
+/*!***************************************************************!*\
+  !*** ./node_modules/axios/lib/helpers/normalizeHeaderName.js ***!
+  \***************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+var utils = __webpack_require__(/*! ../utils */ "./node_modules/axios/lib/utils.js");
+
+module.exports = function normalizeHeaderName(headers, normalizedName) {
+  utils.forEach(headers, function processHeader(value, name) {
+    if (name !== normalizedName && name.toUpperCase() === normalizedName.toUpperCase()) {
+      headers[normalizedName] = value;
+      delete headers[name];
+    }
+  });
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/helpers/parseHeaders.js":
+/*!********************************************************!*\
+  !*** ./node_modules/axios/lib/helpers/parseHeaders.js ***!
+  \********************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+var utils = __webpack_require__(/*! ./../utils */ "./node_modules/axios/lib/utils.js");
+
+// Headers whose duplicates are ignored by node
+// c.f. https://nodejs.org/api/http.html#http_message_headers
+var ignoreDuplicateOf = [
+  'age', 'authorization', 'content-length', 'content-type', 'etag',
+  'expires', 'from', 'host', 'if-modified-since', 'if-unmodified-since',
+  'last-modified', 'location', 'max-forwards', 'proxy-authorization',
+  'referer', 'retry-after', 'user-agent'
+];
+
+/**
+ * Parse headers into an object
+ *
+ * ```
+ * Date: Wed, 27 Aug 2014 08:58:49 GMT
+ * Content-Type: application/json
+ * Connection: keep-alive
+ * Transfer-Encoding: chunked
+ * ```
+ *
+ * @param {String} headers Headers needing to be parsed
+ * @returns {Object} Headers parsed into an object
+ */
+module.exports = function parseHeaders(headers) {
+  var parsed = {};
+  var key;
+  var val;
+  var i;
+
+  if (!headers) { return parsed; }
+
+  utils.forEach(headers.split('\n'), function parser(line) {
+    i = line.indexOf(':');
+    key = utils.trim(line.substr(0, i)).toLowerCase();
+    val = utils.trim(line.substr(i + 1));
+
+    if (key) {
+      if (parsed[key] && ignoreDuplicateOf.indexOf(key) >= 0) {
+        return;
+      }
+      if (key === 'set-cookie') {
+        parsed[key] = (parsed[key] ? parsed[key] : []).concat([val]);
+      } else {
+        parsed[key] = parsed[key] ? parsed[key] + ', ' + val : val;
+      }
+    }
+  });
+
+  return parsed;
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/helpers/spread.js":
+/*!**************************************************!*\
+  !*** ./node_modules/axios/lib/helpers/spread.js ***!
+  \**************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+/**
+ * Syntactic sugar for invoking a function and expanding an array for arguments.
+ *
+ * Common use case would be to use `Function.prototype.apply`.
+ *
+ *  ```js
+ *  function f(x, y, z) {}
+ *  var args = [1, 2, 3];
+ *  f.apply(null, args);
+ *  ```
+ *
+ * With `spread` this example can be re-written.
+ *
+ *  ```js
+ *  spread(function(x, y, z) {})([1, 2, 3]);
+ *  ```
+ *
+ * @param {Function} callback
+ * @returns {Function}
+ */
+module.exports = function spread(callback) {
+  return function wrap(arr) {
+    return callback.apply(null, arr);
+  };
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/helpers/validator.js":
+/*!*****************************************************!*\
+  !*** ./node_modules/axios/lib/helpers/validator.js ***!
+  \*****************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+var pkg = __webpack_require__(/*! ./../../package.json */ "./node_modules/axios/package.json");
+
+var validators = {};
+
+// eslint-disable-next-line func-names
+['object', 'boolean', 'number', 'function', 'string', 'symbol'].forEach(function(type, i) {
+  validators[type] = function validator(thing) {
+    return typeof thing === type || 'a' + (i < 1 ? 'n ' : ' ') + type;
+  };
+});
+
+var deprecatedWarnings = {};
+var currentVerArr = pkg.version.split('.');
+
+/**
+ * Compare package versions
+ * @param {string} version
+ * @param {string?} thanVersion
+ * @returns {boolean}
+ */
+function isOlderVersion(version, thanVersion) {
+  var pkgVersionArr = thanVersion ? thanVersion.split('.') : currentVerArr;
+  var destVer = version.split('.');
+  for (var i = 0; i < 3; i++) {
+    if (pkgVersionArr[i] > destVer[i]) {
+      return true;
+    } else if (pkgVersionArr[i] < destVer[i]) {
+      return false;
+    }
+  }
+  return false;
+}
+
+/**
+ * Transitional option validator
+ * @param {function|boolean?} validator
+ * @param {string?} version
+ * @param {string} message
+ * @returns {function}
+ */
+validators.transitional = function transitional(validator, version, message) {
+  var isDeprecated = version && isOlderVersion(version);
+
+  function formatMessage(opt, desc) {
+    return '[Axios v' + pkg.version + '] Transitional option \'' + opt + '\'' + desc + (message ? '. ' + message : '');
+  }
+
+  // eslint-disable-next-line func-names
+  return function(value, opt, opts) {
+    if (validator === false) {
+      throw new Error(formatMessage(opt, ' has been removed in ' + version));
+    }
+
+    if (isDeprecated && !deprecatedWarnings[opt]) {
+      deprecatedWarnings[opt] = true;
+      // eslint-disable-next-line no-console
+      console.warn(
+        formatMessage(
+          opt,
+          ' has been deprecated since v' + version + ' and will be removed in the near future'
+        )
+      );
+    }
+
+    return validator ? validator(value, opt, opts) : true;
+  };
+};
+
+/**
+ * Assert object's properties type
+ * @param {object} options
+ * @param {object} schema
+ * @param {boolean?} allowUnknown
+ */
+
+function assertOptions(options, schema, allowUnknown) {
+  if (typeof options !== 'object') {
+    throw new TypeError('options must be an object');
+  }
+  var keys = Object.keys(options);
+  var i = keys.length;
+  while (i-- > 0) {
+    var opt = keys[i];
+    var validator = schema[opt];
+    if (validator) {
+      var value = options[opt];
+      var result = value === undefined || validator(value, opt, options);
+      if (result !== true) {
+        throw new TypeError('option ' + opt + ' must be ' + result);
+      }
+      continue;
+    }
+    if (allowUnknown !== true) {
+      throw Error('Unknown option ' + opt);
+    }
+  }
+}
+
+module.exports = {
+  isOlderVersion: isOlderVersion,
+  assertOptions: assertOptions,
+  validators: validators
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/utils.js":
+/*!*****************************************!*\
+  !*** ./node_modules/axios/lib/utils.js ***!
+  \*****************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+var bind = __webpack_require__(/*! ./helpers/bind */ "./node_modules/axios/lib/helpers/bind.js");
+
+// utils is a library of generic helper functions non-specific to axios
+
+var toString = Object.prototype.toString;
+
+/**
+ * Determine if a value is an Array
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if value is an Array, otherwise false
+ */
+function isArray(val) {
+  return toString.call(val) === '[object Array]';
+}
+
+/**
+ * Determine if a value is undefined
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if the value is undefined, otherwise false
+ */
+function isUndefined(val) {
+  return typeof val === 'undefined';
+}
+
+/**
+ * Determine if a value is a Buffer
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if value is a Buffer, otherwise false
+ */
+function isBuffer(val) {
+  return val !== null && !isUndefined(val) && val.constructor !== null && !isUndefined(val.constructor)
+    && typeof val.constructor.isBuffer === 'function' && val.constructor.isBuffer(val);
+}
+
+/**
+ * Determine if a value is an ArrayBuffer
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if value is an ArrayBuffer, otherwise false
+ */
+function isArrayBuffer(val) {
+  return toString.call(val) === '[object ArrayBuffer]';
+}
+
+/**
+ * Determine if a value is a FormData
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if value is an FormData, otherwise false
+ */
+function isFormData(val) {
+  return (typeof FormData !== 'undefined') && (val instanceof FormData);
+}
+
+/**
+ * Determine if a value is a view on an ArrayBuffer
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if value is a view on an ArrayBuffer, otherwise false
+ */
+function isArrayBufferView(val) {
+  var result;
+  if ((typeof ArrayBuffer !== 'undefined') && (ArrayBuffer.isView)) {
+    result = ArrayBuffer.isView(val);
+  } else {
+    result = (val) && (val.buffer) && (val.buffer instanceof ArrayBuffer);
+  }
+  return result;
+}
+
+/**
+ * Determine if a value is a String
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if value is a String, otherwise false
+ */
+function isString(val) {
+  return typeof val === 'string';
+}
+
+/**
+ * Determine if a value is a Number
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if value is a Number, otherwise false
+ */
+function isNumber(val) {
+  return typeof val === 'number';
+}
+
+/**
+ * Determine if a value is an Object
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if value is an Object, otherwise false
+ */
+function isObject(val) {
+  return val !== null && typeof val === 'object';
+}
+
+/**
+ * Determine if a value is a plain Object
+ *
+ * @param {Object} val The value to test
+ * @return {boolean} True if value is a plain Object, otherwise false
+ */
+function isPlainObject(val) {
+  if (toString.call(val) !== '[object Object]') {
+    return false;
+  }
+
+  var prototype = Object.getPrototypeOf(val);
+  return prototype === null || prototype === Object.prototype;
+}
+
+/**
+ * Determine if a value is a Date
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if value is a Date, otherwise false
+ */
+function isDate(val) {
+  return toString.call(val) === '[object Date]';
+}
+
+/**
+ * Determine if a value is a File
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if value is a File, otherwise false
+ */
+function isFile(val) {
+  return toString.call(val) === '[object File]';
+}
+
+/**
+ * Determine if a value is a Blob
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if value is a Blob, otherwise false
+ */
+function isBlob(val) {
+  return toString.call(val) === '[object Blob]';
+}
+
+/**
+ * Determine if a value is a Function
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if value is a Function, otherwise false
+ */
+function isFunction(val) {
+  return toString.call(val) === '[object Function]';
+}
+
+/**
+ * Determine if a value is a Stream
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if value is a Stream, otherwise false
+ */
+function isStream(val) {
+  return isObject(val) && isFunction(val.pipe);
+}
+
+/**
+ * Determine if a value is a URLSearchParams object
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if value is a URLSearchParams object, otherwise false
+ */
+function isURLSearchParams(val) {
+  return typeof URLSearchParams !== 'undefined' && val instanceof URLSearchParams;
+}
+
+/**
+ * Trim excess whitespace off the beginning and end of a string
+ *
+ * @param {String} str The String to trim
+ * @returns {String} The String freed of excess whitespace
+ */
+function trim(str) {
+  return str.trim ? str.trim() : str.replace(/^\s+|\s+$/g, '');
+}
+
+/**
+ * Determine if we're running in a standard browser environment
+ *
+ * This allows axios to run in a web worker, and react-native.
+ * Both environments support XMLHttpRequest, but not fully standard globals.
+ *
+ * web workers:
+ *  typeof window -> undefined
+ *  typeof document -> undefined
+ *
+ * react-native:
+ *  navigator.product -> 'ReactNative'
+ * nativescript
+ *  navigator.product -> 'NativeScript' or 'NS'
+ */
+function isStandardBrowserEnv() {
+  if (typeof navigator !== 'undefined' && (navigator.product === 'ReactNative' ||
+                                           navigator.product === 'NativeScript' ||
+                                           navigator.product === 'NS')) {
+    return false;
+  }
+  return (
+    typeof window !== 'undefined' &&
+    typeof document !== 'undefined'
+  );
+}
+
+/**
+ * Iterate over an Array or an Object invoking a function for each item.
+ *
+ * If `obj` is an Array callback will be called passing
+ * the value, index, and complete array for each item.
+ *
+ * If 'obj' is an Object callback will be called passing
+ * the value, key, and complete object for each property.
+ *
+ * @param {Object|Array} obj The object to iterate
+ * @param {Function} fn The callback to invoke for each item
+ */
+function forEach(obj, fn) {
+  // Don't bother if no value provided
+  if (obj === null || typeof obj === 'undefined') {
+    return;
+  }
+
+  // Force an array if not already something iterable
+  if (typeof obj !== 'object') {
+    /*eslint no-param-reassign:0*/
+    obj = [obj];
+  }
+
+  if (isArray(obj)) {
+    // Iterate over array values
+    for (var i = 0, l = obj.length; i < l; i++) {
+      fn.call(null, obj[i], i, obj);
+    }
+  } else {
+    // Iterate over object keys
+    for (var key in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        fn.call(null, obj[key], key, obj);
+      }
+    }
+  }
+}
+
+/**
+ * Accepts varargs expecting each argument to be an object, then
+ * immutably merges the properties of each object and returns result.
+ *
+ * When multiple objects contain the same key the later object in
+ * the arguments list will take precedence.
+ *
+ * Example:
+ *
+ * ```js
+ * var result = merge({foo: 123}, {foo: 456});
+ * console.log(result.foo); // outputs 456
+ * ```
+ *
+ * @param {Object} obj1 Object to merge
+ * @returns {Object} Result of all merge properties
+ */
+function merge(/* obj1, obj2, obj3, ... */) {
+  var result = {};
+  function assignValue(val, key) {
+    if (isPlainObject(result[key]) && isPlainObject(val)) {
+      result[key] = merge(result[key], val);
+    } else if (isPlainObject(val)) {
+      result[key] = merge({}, val);
+    } else if (isArray(val)) {
+      result[key] = val.slice();
+    } else {
+      result[key] = val;
+    }
+  }
+
+  for (var i = 0, l = arguments.length; i < l; i++) {
+    forEach(arguments[i], assignValue);
+  }
+  return result;
+}
+
+/**
+ * Extends object a by mutably adding to it the properties of object b.
+ *
+ * @param {Object} a The object to be extended
+ * @param {Object} b The object to copy properties from
+ * @param {Object} thisArg The object to bind function to
+ * @return {Object} The resulting value of object a
+ */
+function extend(a, b, thisArg) {
+  forEach(b, function assignValue(val, key) {
+    if (thisArg && typeof val === 'function') {
+      a[key] = bind(val, thisArg);
+    } else {
+      a[key] = val;
+    }
+  });
+  return a;
+}
+
+/**
+ * Remove byte order marker. This catches EF BB BF (the UTF-8 BOM)
+ *
+ * @param {string} content with BOM
+ * @return {string} content value without BOM
+ */
+function stripBOM(content) {
+  if (content.charCodeAt(0) === 0xFEFF) {
+    content = content.slice(1);
+  }
+  return content;
+}
+
+module.exports = {
+  isArray: isArray,
+  isArrayBuffer: isArrayBuffer,
+  isBuffer: isBuffer,
+  isFormData: isFormData,
+  isArrayBufferView: isArrayBufferView,
+  isString: isString,
+  isNumber: isNumber,
+  isObject: isObject,
+  isPlainObject: isPlainObject,
+  isUndefined: isUndefined,
+  isDate: isDate,
+  isFile: isFile,
+  isBlob: isBlob,
+  isFunction: isFunction,
+  isStream: isStream,
+  isURLSearchParams: isURLSearchParams,
+  isStandardBrowserEnv: isStandardBrowserEnv,
+  forEach: forEach,
+  merge: merge,
+  extend: extend,
+  trim: trim,
+  stripBOM: stripBOM
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/package.json":
+/*!*****************************************!*\
+  !*** ./node_modules/axios/package.json ***!
+  \*****************************************/
+/*! exports provided: name, version, description, main, scripts, repository, keywords, author, license, bugs, homepage, devDependencies, browser, jsdelivr, unpkg, typings, dependencies, bundlesize, default */
+/***/ (function(module) {
+
+module.exports = JSON.parse("{\"name\":\"axios\",\"version\":\"0.21.4\",\"description\":\"Promise based HTTP client for the browser and node.js\",\"main\":\"index.js\",\"scripts\":{\"test\":\"grunt test\",\"start\":\"node ./sandbox/server.js\",\"build\":\"NODE_ENV=production grunt build\",\"preversion\":\"npm test\",\"version\":\"npm run build && grunt version && git add -A dist && git add CHANGELOG.md bower.json package.json\",\"postversion\":\"git push && git push --tags\",\"examples\":\"node ./examples/server.js\",\"coveralls\":\"cat coverage/lcov.info | ./node_modules/coveralls/bin/coveralls.js\",\"fix\":\"eslint --fix lib/**/*.js\"},\"repository\":{\"type\":\"git\",\"url\":\"https://github.com/axios/axios.git\"},\"keywords\":[\"xhr\",\"http\",\"ajax\",\"promise\",\"node\"],\"author\":\"Matt Zabriskie\",\"license\":\"MIT\",\"bugs\":{\"url\":\"https://github.com/axios/axios/issues\"},\"homepage\":\"https://axios-http.com\",\"devDependencies\":{\"coveralls\":\"^3.0.0\",\"es6-promise\":\"^4.2.4\",\"grunt\":\"^1.3.0\",\"grunt-banner\":\"^0.6.0\",\"grunt-cli\":\"^1.2.0\",\"grunt-contrib-clean\":\"^1.1.0\",\"grunt-contrib-watch\":\"^1.0.0\",\"grunt-eslint\":\"^23.0.0\",\"grunt-karma\":\"^4.0.0\",\"grunt-mocha-test\":\"^0.13.3\",\"grunt-ts\":\"^6.0.0-beta.19\",\"grunt-webpack\":\"^4.0.2\",\"istanbul-instrumenter-loader\":\"^1.0.0\",\"jasmine-core\":\"^2.4.1\",\"karma\":\"^6.3.2\",\"karma-chrome-launcher\":\"^3.1.0\",\"karma-firefox-launcher\":\"^2.1.0\",\"karma-jasmine\":\"^1.1.1\",\"karma-jasmine-ajax\":\"^0.1.13\",\"karma-safari-launcher\":\"^1.0.0\",\"karma-sauce-launcher\":\"^4.3.6\",\"karma-sinon\":\"^1.0.5\",\"karma-sourcemap-loader\":\"^0.3.8\",\"karma-webpack\":\"^4.0.2\",\"load-grunt-tasks\":\"^3.5.2\",\"minimist\":\"^1.2.0\",\"mocha\":\"^8.2.1\",\"sinon\":\"^4.5.0\",\"terser-webpack-plugin\":\"^4.2.3\",\"typescript\":\"^4.0.5\",\"url-search-params\":\"^0.10.0\",\"webpack\":\"^4.44.2\",\"webpack-dev-server\":\"^3.11.0\"},\"browser\":{\"./lib/adapters/http.js\":\"./lib/adapters/xhr.js\"},\"jsdelivr\":\"dist/axios.min.js\",\"unpkg\":\"dist/axios.min.js\",\"typings\":\"./index.d.ts\",\"dependencies\":{\"follow-redirects\":\"^1.14.0\"},\"bundlesize\":[{\"path\":\"./dist/axios.min.js\",\"threshold\":\"5kB\"}]}");
+
+/***/ }),
+
+/***/ "./node_modules/classnames/index.js":
+/*!******************************************!*\
+  !*** ./node_modules/classnames/index.js ***!
+  \******************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+var __WEBPACK_AMD_DEFINE_ARRAY__, __WEBPACK_AMD_DEFINE_RESULT__;/*!
+  Copyright (c) 2018 Jed Watson.
+  Licensed under the MIT License (MIT), see
+  http://jedwatson.github.io/classnames
+*/
+/* global define */
+
+(function () {
+	'use strict';
+
+	var hasOwn = {}.hasOwnProperty;
+
+	function classNames() {
+		var classes = [];
+
+		for (var i = 0; i < arguments.length; i++) {
+			var arg = arguments[i];
+			if (!arg) continue;
+
+			var argType = typeof arg;
+
+			if (argType === 'string' || argType === 'number') {
+				classes.push(arg);
+			} else if (Array.isArray(arg)) {
+				if (arg.length) {
+					var inner = classNames.apply(null, arg);
+					if (inner) {
+						classes.push(inner);
+					}
+				}
+			} else if (argType === 'object') {
+				if (arg.toString === Object.prototype.toString) {
+					for (var key in arg) {
+						if (hasOwn.call(arg, key) && arg[key]) {
+							classes.push(key);
+						}
+					}
+				} else {
+					classes.push(arg.toString());
+				}
+			}
+		}
+
+		return classes.join(' ');
+	}
+
+	if ( true && module.exports) {
+		classNames.default = classNames;
+		module.exports = classNames;
+	} else if (true) {
+		// register as 'classnames', consistent with npm package name
+		!(__WEBPACK_AMD_DEFINE_ARRAY__ = [], __WEBPACK_AMD_DEFINE_RESULT__ = (function () {
+			return classNames;
+		}).apply(exports, __WEBPACK_AMD_DEFINE_ARRAY__),
+				__WEBPACK_AMD_DEFINE_RESULT__ !== undefined && (module.exports = __WEBPACK_AMD_DEFINE_RESULT__));
+	} else {}
+}());
+
+
+/***/ }),
+
 /***/ "./node_modules/history/esm/history.js":
 /*!*********************************************!*\
   !*** ./node_modules/history/esm/history.js ***!
@@ -2755,6 +4915,6934 @@ var ReactPropTypesSecret = 'SECRET_DO_NOT_PASS_THIS_OR_YOU_WILL_BE_FIRED';
 
 module.exports = ReactPropTypesSecret;
 
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/block/block.js":
+/*!***************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/block/block.js ***!
+  \***************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Block = function Block(_ref) {
+  var className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["className"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('block', className)
+  }));
+};
+
+Block.defaultProps = {};
+var _default = Block;
+exports["default"] = _default;
+//# sourceMappingURL=block.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/block/index.js":
+/*!***************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/block/index.js ***!
+  \***************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _block = _interopRequireDefault(__webpack_require__(/*! ./block */ "./node_modules/react-bulma-components/cjs/components/block/block.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var _default = _block["default"];
+exports["default"] = _default;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/box/box.js":
+/*!***********************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/box/box.js ***!
+  \***********************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Box = function Box(_ref) {
+  var children = _ref.children,
+      className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["children", "className"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('box', className)
+  }), children);
+};
+
+Box.defaultProps = {};
+var _default = Box;
+exports["default"] = _default;
+//# sourceMappingURL=box.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/box/index.js":
+/*!*************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/box/index.js ***!
+  \*************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _box = _interopRequireDefault(__webpack_require__(/*! ./box */ "./node_modules/react-bulma-components/cjs/components/box/box.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var _default = _box["default"];
+exports["default"] = _default;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/breadcrumb/breadcrumb.js":
+/*!*************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/breadcrumb/breadcrumb.js ***!
+  \*************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames2 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+var _item = _interopRequireDefault(__webpack_require__(/*! ./components/item */ "./node_modules/react-bulma-components/cjs/components/breadcrumb/components/item.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Breadcrumb = function Breadcrumb(_ref) {
+  var _classnames;
+
+  var className = _ref.className,
+      separator = _ref.separator,
+      size = _ref.size,
+      align = _ref.align,
+      children = _ref.children,
+      props = _objectWithoutProperties(_ref, ["className", "separator", "size", "align", "children"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames2["default"])('breadcrumb', className, (_classnames = {}, _defineProperty(_classnames, "has-".concat(separator, "-separator"), separator), _defineProperty(_classnames, "is-".concat(size), size), _defineProperty(_classnames, "is-".concat(align), align), _classnames))
+  }), /*#__PURE__*/_react["default"].createElement("ul", null, children));
+};
+
+Breadcrumb.Item = _item["default"];
+Breadcrumb.defaultProps = {
+  separator: undefined,
+  renderAs: 'nav',
+  size: undefined,
+  align: undefined
+};
+var _default = Breadcrumb;
+exports["default"] = _default;
+//# sourceMappingURL=breadcrumb.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/breadcrumb/components/item.js":
+/*!******************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/breadcrumb/components/item.js ***!
+  \******************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var BreadcrumbItem = function BreadcrumbItem(_ref) {
+  var className = _ref.className,
+      active = _ref.active,
+      children = _ref.children,
+      props = _objectWithoutProperties(_ref, ["className", "active", "children"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])(className, {
+      'is-active': active
+    })
+  }), children);
+};
+
+BreadcrumbItem.defaultProps = {
+  renderAs: 'li'
+};
+var _default = BreadcrumbItem;
+exports["default"] = _default;
+//# sourceMappingURL=item.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/breadcrumb/index.js":
+/*!********************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/breadcrumb/index.js ***!
+  \********************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _breadcrumb = _interopRequireDefault(__webpack_require__(/*! ./breadcrumb */ "./node_modules/react-bulma-components/cjs/components/breadcrumb/breadcrumb.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var _default = _breadcrumb["default"];
+exports["default"] = _default;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/button/button.js":
+/*!*****************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/button/button.js ***!
+  \*****************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames2 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _buttonGroup = _interopRequireDefault(__webpack_require__(/*! ./components/button-group */ "./node_modules/react-bulma-components/cjs/components/button/components/button-group.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+var _normalizer = __webpack_require__(/*! ../../services/normalizer */ "./node_modules/react-bulma-components/cjs/services/normalizer.js");
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Button = function Button(_ref) {
+  var _classnames;
+
+  var children = _ref.children,
+      className = _ref.className,
+      renderAs = _ref.renderAs,
+      color = _ref.color,
+      size = _ref.size,
+      outlined = _ref.outlined,
+      inverted = _ref.inverted,
+      submit = _ref.submit,
+      reset = _ref.reset,
+      fullwidth = _ref.fullwidth,
+      status = _ref.status,
+      loading = _ref.loading,
+      disabled = _ref.disabled,
+      remove = _ref.remove,
+      isSelected = _ref.isSelected,
+      isStatic = _ref.isStatic,
+      rounded = _ref.rounded,
+      onClick = _ref.onClick,
+      text = _ref.text,
+      props = _objectWithoutProperties(_ref, ["children", "className", "renderAs", "color", "size", "outlined", "inverted", "submit", "reset", "fullwidth", "status", "loading", "disabled", "remove", "isSelected", "isStatic", "rounded", "onClick", "text"]);
+
+  var otherProps = {};
+
+  if (submit) {
+    otherProps = {
+      type: 'submit',
+      renderAs: 'button'
+    };
+  }
+
+  if (reset) {
+    otherProps = {
+      type: 'reset',
+      renderAs: 'button'
+    };
+  }
+
+  if (isStatic) {
+    otherProps = {
+      renderAs: 'span'
+    };
+  }
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({
+    tabIndex: disabled ? -1 : 0,
+    renderAs: renderAs
+  }, props, otherProps, {
+    disabled: disabled,
+    onClick: disabled ? undefined : onClick,
+    className: (0, _classnames2["default"])(className, (_classnames = {}, _defineProperty(_classnames, "is-".concat(color), color), _defineProperty(_classnames, "is-".concat(size), size), _defineProperty(_classnames, 'is-selected', isSelected), _defineProperty(_classnames, 'is-static', isStatic), _defineProperty(_classnames, 'is-rounded', rounded), _defineProperty(_classnames, 'is-outlined', outlined), _defineProperty(_classnames, 'is-inverted', inverted), _defineProperty(_classnames, 'is-fullwidth', fullwidth), _defineProperty(_classnames, "is-".concat((0, _normalizer.normalizeStatus)(status)), status), _defineProperty(_classnames, 'is-loading', loading), _defineProperty(_classnames, 'is-text', text), _defineProperty(_classnames, "delete", remove), _defineProperty(_classnames, "button", !remove), _classnames))
+  }), children);
+};
+
+Button.Group = _buttonGroup["default"];
+Button.defaultProps = {
+  renderAs: 'button'
+};
+var _default = Button;
+exports["default"] = _default;
+//# sourceMappingURL=button.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/button/components/button-group.js":
+/*!**********************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/button/components/button-group.js ***!
+  \**********************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames2 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+var _normalizer = __webpack_require__(/*! ../../../services/normalizer */ "./node_modules/react-bulma-components/cjs/services/normalizer.js");
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var ButtonGroup = function ButtonGroup(_ref) {
+  var _classnames;
+
+  var className = _ref.className,
+      hasAddons = _ref.hasAddons,
+      align = _ref.align,
+      size = _ref.size,
+      props = _objectWithoutProperties(_ref, ["className", "hasAddons", "align", "size"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames2["default"])('buttons', className, (_classnames = {
+      'has-addons': hasAddons
+    }, _defineProperty(_classnames, "is-".concat([(0, _normalizer.normalizeAlign)(align)]), align), _defineProperty(_classnames, "are-".concat(size), size), _classnames))
+  }));
+};
+
+ButtonGroup.defaultProps = {
+  renderAs: 'div'
+};
+var _default = ButtonGroup;
+exports["default"] = _default;
+//# sourceMappingURL=button-group.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/button/index.js":
+/*!****************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/button/index.js ***!
+  \****************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _button = _interopRequireDefault(__webpack_require__(/*! ./button */ "./node_modules/react-bulma-components/cjs/components/button/button.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var _default = _button["default"];
+exports["default"] = _default;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/card/card.js":
+/*!*************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/card/card.js ***!
+  \*************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _image = _interopRequireDefault(__webpack_require__(/*! ./components/image */ "./node_modules/react-bulma-components/cjs/components/card/components/image.js"));
+
+var _content = _interopRequireDefault(__webpack_require__(/*! ./components/content */ "./node_modules/react-bulma-components/cjs/components/card/components/content.js"));
+
+var _header = _interopRequireDefault(__webpack_require__(/*! ./components/header */ "./node_modules/react-bulma-components/cjs/components/card/components/header/index.js"));
+
+var _footer = _interopRequireDefault(__webpack_require__(/*! ./components/footer */ "./node_modules/react-bulma-components/cjs/components/card/components/footer/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Card = function Card(_ref) {
+  var className = _ref.className,
+      children = _ref.children,
+      props = _objectWithoutProperties(_ref, ["className", "children"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({
+    className: (0, _classnames["default"])('card', className)
+  }, props), children);
+};
+
+Card.Image = _image["default"];
+Card.Content = _content["default"];
+Card.Header = _header["default"];
+Card.Footer = _footer["default"];
+Card.defaultProps = {};
+var _default = Card;
+exports["default"] = _default;
+//# sourceMappingURL=card.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/card/components/content.js":
+/*!***************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/card/components/content.js ***!
+  \***************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var CardContent = function CardContent(_ref) {
+  var className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["className"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('card-content', className)
+  }));
+};
+
+CardContent.defaultProps = {};
+var _default = CardContent;
+exports["default"] = _default;
+//# sourceMappingURL=content.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/card/components/footer/components/footer-item.js":
+/*!*************************************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/card/components/footer/components/footer-item.js ***!
+  \*************************************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var CardFooterItem = function CardFooterItem(_ref) {
+  var className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["className"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('card-footer-item', className)
+  }));
+};
+
+CardFooterItem.defaultProps = {};
+var _default = CardFooterItem;
+exports["default"] = _default;
+//# sourceMappingURL=footer-item.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/card/components/footer/footer.js":
+/*!*********************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/card/components/footer/footer.js ***!
+  \*********************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _footerItem = _interopRequireDefault(__webpack_require__(/*! ./components/footer-item */ "./node_modules/react-bulma-components/cjs/components/card/components/footer/components/footer-item.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var CardFooter = function CardFooter(_ref) {
+  var className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["className"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('card-footer', className)
+  }));
+};
+
+CardFooter.Item = _footerItem["default"];
+CardFooter.defaultProps = {};
+var _default = CardFooter;
+exports["default"] = _default;
+//# sourceMappingURL=footer.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/card/components/footer/index.js":
+/*!********************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/card/components/footer/index.js ***!
+  \********************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+Object.defineProperty(exports, "default", {
+  enumerable: true,
+  get: function get() {
+    return _footer["default"];
+  }
+});
+
+var _footer = _interopRequireDefault(__webpack_require__(/*! ./footer */ "./node_modules/react-bulma-components/cjs/components/card/components/footer/footer.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/card/components/header/components/header-icon.js":
+/*!*************************************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/card/components/header/components/header-icon.js ***!
+  \*************************************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var CardHeaderIcon = function CardHeaderIcon(_ref) {
+  var className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["className"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('card-header-icon', className)
+  }));
+};
+
+CardHeaderIcon.defaultProps = {};
+var _default = CardHeaderIcon;
+exports["default"] = _default;
+//# sourceMappingURL=header-icon.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/card/components/header/components/header-title.js":
+/*!**************************************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/card/components/header/components/header-title.js ***!
+  \**************************************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var CardHeaderTitle = function CardHeaderTitle(_ref) {
+  var className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["className"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('card-header-title', className)
+  }));
+};
+
+CardHeaderTitle.defaultProps = {};
+var _default = CardHeaderTitle;
+exports["default"] = _default;
+//# sourceMappingURL=header-title.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/card/components/header/header.js":
+/*!*********************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/card/components/header/header.js ***!
+  \*********************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _headerTitle = _interopRequireDefault(__webpack_require__(/*! ./components/header-title */ "./node_modules/react-bulma-components/cjs/components/card/components/header/components/header-title.js"));
+
+var _headerIcon = _interopRequireDefault(__webpack_require__(/*! ./components/header-icon */ "./node_modules/react-bulma-components/cjs/components/card/components/header/components/header-icon.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var CardHeader = function CardHeader(_ref) {
+  var className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["className"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('card-header', className)
+  }));
+};
+
+CardHeader.Title = _headerTitle["default"];
+CardHeader.Icon = _headerIcon["default"];
+CardHeader.defaultProps = {};
+var _default = CardHeader;
+exports["default"] = _default;
+//# sourceMappingURL=header.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/card/components/header/index.js":
+/*!********************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/card/components/header/index.js ***!
+  \********************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+Object.defineProperty(exports, "default", {
+  enumerable: true,
+  get: function get() {
+    return _header["default"];
+  }
+});
+
+var _header = _interopRequireDefault(__webpack_require__(/*! ./header */ "./node_modules/react-bulma-components/cjs/components/card/components/header/header.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/card/components/image.js":
+/*!*************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/card/components/image.js ***!
+  \*************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _image = _interopRequireDefault(__webpack_require__(/*! ../../image */ "./node_modules/react-bulma-components/cjs/components/image/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var CardImage = function CardImage(_ref) {
+  var className = _ref.className,
+      domRef = _ref.domRef,
+      props = _objectWithoutProperties(_ref, ["className", "domRef"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], {
+    domRef: domRef,
+    className: (0, _classnames["default"])('card-image', className)
+  }, /*#__PURE__*/_react["default"].createElement(_image["default"], props));
+};
+
+CardImage.defaultProps = {};
+var _default = CardImage;
+exports["default"] = _default;
+//# sourceMappingURL=image.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/card/index.js":
+/*!**************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/card/index.js ***!
+  \**************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _card = _interopRequireDefault(__webpack_require__(/*! ./card */ "./node_modules/react-bulma-components/cjs/components/card/card.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var _default = _card["default"];
+exports["default"] = _default;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/columns/columns.js":
+/*!*******************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/columns/columns.js ***!
+  \*******************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _column = _interopRequireDefault(__webpack_require__(/*! ./components/column */ "./node_modules/react-bulma-components/cjs/components/columns/components/column.js"));
+
+var _constants = _interopRequireDefault(__webpack_require__(/*! ./constants */ "./node_modules/react-bulma-components/cjs/components/columns/constants.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Columns = function Columns(_ref) {
+  var _classNames;
+
+  var className = _ref.className,
+      breakpoint = _ref.breakpoint,
+      gap = _ref.gap,
+      multiline = _ref.multiline,
+      centered = _ref.centered,
+      vCentered = _ref.vCentered,
+      variableGap = _ref.variableGap,
+      _ref$mobile = _ref.mobile,
+      mobile = _ref$mobile === void 0 ? {} : _ref$mobile,
+      _ref$tablet = _ref.tablet,
+      tablet = _ref$tablet === void 0 ? {} : _ref$tablet,
+      _ref$desktop = _ref.desktop,
+      desktop = _ref$desktop === void 0 ? {} : _ref$desktop,
+      _ref$widescreen = _ref.widescreen,
+      widescreen = _ref$widescreen === void 0 ? {} : _ref$widescreen,
+      _ref$fullhd = _ref.fullhd,
+      fullhd = _ref$fullhd === void 0 ? {} : _ref$fullhd,
+      _ref$touch = _ref.touch,
+      touch = _ref$touch === void 0 ? {} : _ref$touch,
+      props = _objectWithoutProperties(_ref, ["className", "breakpoint", "gap", "multiline", "centered", "vCentered", "variableGap", "mobile", "tablet", "desktop", "widescreen", "fullhd", "touch"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    mobile: mobile,
+    tablet: tablet,
+    desktop: desktop,
+    widescreen: widescreen,
+    fullhd: fullhd,
+    touch: touch,
+    className: (0, _classnames["default"])(className, 'columns', (_classNames = {}, _defineProperty(_classNames, "is-".concat(breakpoint), breakpoint), _defineProperty(_classNames, "is-".concat(gap), gap !== undefined), _defineProperty(_classNames, 'is-multiline', multiline), _defineProperty(_classNames, 'is-centered', centered), _defineProperty(_classNames, 'is-vcentered', vCentered), _defineProperty(_classNames, 'is-variable', gap !== undefined || [touch, mobile, tablet, desktop, widescreen, fullhd].find(function (b) {
+      return b.gap !== undefined;
+    })), _defineProperty(_classNames, "is-".concat(touch.gap, "-touch"), touch.gap !== undefined), _defineProperty(_classNames, "is-".concat(mobile.gap, "-mobile"), mobile.gap !== undefined), _defineProperty(_classNames, "is-".concat(tablet.gap, "-tablet"), tablet.gap !== undefined), _defineProperty(_classNames, "is-".concat(desktop.gap, "-desktop"), desktop.gap !== undefined), _defineProperty(_classNames, "is-".concat(widescreen.gap, "-widescreen"), widescreen.gap !== undefined), _defineProperty(_classNames, "is-".concat(fullhd.gap, "-fullhd"), fullhd.gap !== undefined), _classNames))
+  }));
+};
+
+Columns.Column = _column["default"];
+Columns.CONSTANTS = _constants["default"];
+Columns.defaultProps = {
+  multiline: true
+};
+var _default = Columns;
+exports["default"] = _default;
+//# sourceMappingURL=columns.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/columns/components/column.js":
+/*!*****************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/columns/components/column.js ***!
+  \*****************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Column = function Column(_ref) {
+  var _classNames;
+
+  var children = _ref.children,
+      className = _ref.className,
+      size = _ref.size,
+      offset = _ref.offset,
+      narrow = _ref.narrow,
+      _ref$mobile = _ref.mobile,
+      mobile = _ref$mobile === void 0 ? {} : _ref$mobile,
+      _ref$tablet = _ref.tablet,
+      tablet = _ref$tablet === void 0 ? {} : _ref$tablet,
+      _ref$desktop = _ref.desktop,
+      desktop = _ref$desktop === void 0 ? {} : _ref$desktop,
+      _ref$widescreen = _ref.widescreen,
+      widescreen = _ref$widescreen === void 0 ? {} : _ref$widescreen,
+      _ref$fullhd = _ref.fullhd,
+      fullhd = _ref$fullhd === void 0 ? {} : _ref$fullhd,
+      _ref$touch = _ref.touch,
+      touch = _ref$touch === void 0 ? {} : _ref$touch,
+      props = _objectWithoutProperties(_ref, ["children", "className", "size", "offset", "narrow", "mobile", "tablet", "desktop", "widescreen", "fullhd", "touch"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    mobile: mobile,
+    tablet: tablet,
+    desktop: desktop,
+    widescreen: widescreen,
+    fullhd: fullhd,
+    touch: touch,
+    className: (0, _classnames["default"])(className, 'column', (_classNames = {}, _defineProperty(_classNames, "is-".concat(size), size), _defineProperty(_classNames, "is-".concat(touch.size, "-mobile"), touch.size), _defineProperty(_classNames, "is-".concat(mobile.size, "-mobile"), mobile.size), _defineProperty(_classNames, "is-".concat(tablet.size, "-tablet"), tablet.size), _defineProperty(_classNames, "is-".concat(desktop.size, "-desktop"), desktop.size), _defineProperty(_classNames, "is-".concat(widescreen.size, "-widescreen"), widescreen.size), _defineProperty(_classNames, "is-".concat(fullhd.size, "-fullhd"), fullhd.size), _defineProperty(_classNames, "is-offset-".concat(touch.offset, "-mobile"), touch.offset), _defineProperty(_classNames, "is-offset-".concat(mobile.offset, "-mobile"), mobile.offset), _defineProperty(_classNames, "is-offset-".concat(tablet.offset, "-tablet"), tablet.offset), _defineProperty(_classNames, "is-offset-".concat(desktop.offset, "-desktop"), desktop.offset), _defineProperty(_classNames, "is-offset-".concat(widescreen.offset, "-widescreen"), widescreen.offset), _defineProperty(_classNames, "is-offset-".concat(fullhd.offset, "-fullhd"), fullhd.offset), _defineProperty(_classNames, "is-offset-".concat(offset), offset), _defineProperty(_classNames, 'is-narrow', narrow), _defineProperty(_classNames, 'is-narrow-touch', touch.narrow), _defineProperty(_classNames, 'is-narrow-mobile', mobile.narrow), _defineProperty(_classNames, 'is-narrow-tablet', tablet.narrow), _defineProperty(_classNames, 'is-narrow-desktop', desktop.narrow), _defineProperty(_classNames, 'is-narrow-widescreen', widescreen.narrow), _defineProperty(_classNames, 'is-narrow-fullhd', fullhd.narrow), _classNames))
+  }), children);
+};
+
+Column.defaultProps = {};
+var _default = Column;
+exports["default"] = _default;
+//# sourceMappingURL=column.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/columns/constants.js":
+/*!*********************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/columns/constants.js ***!
+  \*********************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+var _default = {
+  SIZES: {
+    THREEQUARTERS: 'three-quarters',
+    TWOTHIRDS: 'two-thirds',
+    HALF: 'half',
+    ONETHIRD: 'one-third',
+    ONEQUARTER: 'one-quarter',
+    ONEFIFTH: 'one-fifth',
+    TWOFIFTHS: 'two-fifths',
+    THREEFIFTHS: 'three-fifths',
+    FOURFIFTHS: 'four-fifths'
+  }
+};
+exports["default"] = _default;
+//# sourceMappingURL=constants.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/columns/index.js":
+/*!*****************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/columns/index.js ***!
+  \*****************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _columns = _interopRequireDefault(__webpack_require__(/*! ./columns */ "./node_modules/react-bulma-components/cjs/components/columns/columns.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var _default = _columns["default"];
+exports["default"] = _default;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/container/container.js":
+/*!***********************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/container/container.js ***!
+  \***********************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames2 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Container = function Container(_ref) {
+  var children = _ref.children,
+      max = _ref.max,
+      breakpoint = _ref.breakpoint,
+      className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["children", "max", "breakpoint", "className"]);
+
+  var canSetMax = ['desktop', 'widescreen'].includes(breakpoint);
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames2["default"])('container', className, _defineProperty({}, "is-".concat(canSetMax && max ? 'max-' : '').concat(breakpoint), breakpoint))
+  }), children);
+};
+
+Container.defaultProps = {};
+var _default = Container;
+exports["default"] = _default;
+//# sourceMappingURL=container.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/container/index.js":
+/*!*******************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/container/index.js ***!
+  \*******************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _container = _interopRequireDefault(__webpack_require__(/*! ./container */ "./node_modules/react-bulma-components/cjs/components/container/container.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var _default = _container["default"];
+exports["default"] = _default;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/content/content.js":
+/*!*******************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/content/content.js ***!
+  \*******************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames2 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Content = function Content(_ref) {
+  var children = _ref.children,
+      className = _ref.className,
+      size = _ref.size,
+      props = _objectWithoutProperties(_ref, ["children", "className", "size"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames2["default"])('content', className, _defineProperty({}, "is-".concat(size), size))
+  }), children);
+};
+
+Content.defaultProps = {};
+var _default = Content;
+exports["default"] = _default;
+//# sourceMappingURL=content.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/content/index.js":
+/*!*****************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/content/index.js ***!
+  \*****************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _content = _interopRequireDefault(__webpack_require__(/*! ./content */ "./node_modules/react-bulma-components/cjs/components/content/content.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var _default = _content["default"];
+exports["default"] = _default;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/dropdown/components/divider.js":
+/*!*******************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/dropdown/components/divider.js ***!
+  \*******************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var DropdownDivider = function DropdownDivider(_ref) {
+  var className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["className"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('dropdown-divider', className)
+  }));
+};
+
+DropdownDivider.defaultProps = {
+  renderAs: 'hr'
+};
+var _default = DropdownDivider;
+exports["default"] = _default;
+//# sourceMappingURL=divider.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/dropdown/components/item.js":
+/*!****************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/dropdown/components/item.js ***!
+  \****************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var DropdownItem = function DropdownItem(_ref) {
+  var active = _ref.active,
+      children = _ref.children,
+      value = _ref.value,
+      className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["active", "children", "value", "className"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({
+    title: value
+  }, props, {
+    role: "presentation",
+    className: (0, _classnames["default"])(className, 'dropdown-item', {
+      'is-active': active
+    })
+  }), children);
+};
+
+DropdownItem.defaultProps = {};
+var _default = DropdownItem;
+exports["default"] = _default;
+//# sourceMappingURL=item.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/dropdown/dropdown.js":
+/*!*********************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/dropdown/dropdown.js ***!
+  \*********************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+function _typeof(obj) { "@babel/helpers - typeof"; if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireWildcard(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _item = _interopRequireDefault(__webpack_require__(/*! ./components/item */ "./node_modules/react-bulma-components/cjs/components/dropdown/components/item.js"));
+
+var _divider = _interopRequireDefault(__webpack_require__(/*! ./components/divider */ "./node_modules/react-bulma-components/cjs/components/dropdown/components/divider.js"));
+
+var _button = _interopRequireDefault(__webpack_require__(/*! ../button */ "./node_modules/react-bulma-components/cjs/components/button/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _getRequireWildcardCache() { if (typeof WeakMap !== "function") return null; var cache = new WeakMap(); _getRequireWildcardCache = function _getRequireWildcardCache() { return cache; }; return cache; }
+
+function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } if (obj === null || _typeof(obj) !== "object" && typeof obj !== "function") { return { "default": obj }; } var cache = _getRequireWildcardCache(); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj["default"] = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _slicedToArray(arr, i) { return _arrayWithHoles(arr) || _iterableToArrayLimit(arr, i) || _unsupportedIterableToArray(arr, i) || _nonIterableRest(); }
+
+function _nonIterableRest() { throw new TypeError("Invalid attempt to destructure non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
+
+function _unsupportedIterableToArray(o, minLen) { if (!o) return; if (typeof o === "string") return _arrayLikeToArray(o, minLen); var n = Object.prototype.toString.call(o).slice(8, -1); if (n === "Object" && o.constructor) n = o.constructor.name; if (n === "Map" || n === "Set") return Array.from(o); if (n === "Arguments" || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(n)) return _arrayLikeToArray(o, minLen); }
+
+function _arrayLikeToArray(arr, len) { if (len == null || len > arr.length) len = arr.length; for (var i = 0, arr2 = new Array(len); i < len; i++) { arr2[i] = arr[i]; } return arr2; }
+
+function _iterableToArrayLimit(arr, i) { var _i = arr && (typeof Symbol !== "undefined" && arr[Symbol.iterator] || arr["@@iterator"]); if (_i == null) return; var _arr = []; var _n = true; var _d = false; var _s, _e; try { for (_i = _i.call(arr); !(_n = (_s = _i.next()).done); _n = true) { _arr.push(_s.value); if (i && _arr.length === i) break; } } catch (err) { _d = true; _e = err; } finally { try { if (!_n && _i["return"] != null) _i["return"](); } finally { if (_d) throw _e; } } return _arr; }
+
+function _arrayWithHoles(arr) { if (Array.isArray(arr)) return arr; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Dropdown = function Dropdown(_ref) {
+  var className = _ref.className,
+      children = _ref.children,
+      value = _ref.value,
+      color = _ref.color,
+      align = _ref.align,
+      right = _ref.right,
+      up = _ref.up,
+      hoverable = _ref.hoverable,
+      label = _ref.label,
+      onChange = _ref.onChange,
+      closeOnSelect = _ref.closeOnSelect,
+      icon = _ref.icon,
+      domRef = _ref.domRef,
+      disabled = _ref.disabled,
+      props = _objectWithoutProperties(_ref, ["className", "children", "value", "color", "align", "right", "up", "hoverable", "label", "onChange", "closeOnSelect", "icon", "domRef", "disabled"]);
+
+  var ref = (0, _react.useRef)(domRef);
+
+  var _useState = (0, _react.useState)(false),
+      _useState2 = _slicedToArray(_useState, 2),
+      isOpen = _useState2[0],
+      setIsOpen = _useState2[1];
+
+  var close = function close(evt) {
+    // IDK yet how to test using the ref in enzime
+    // istanbul ignore if
+    if (hoverable || evt && ref && ref.current && ref.current.contains(evt.target)) {
+      return;
+    }
+
+    if (ref.current) {
+      setIsOpen(false);
+    }
+  };
+
+  var onSelect = function onSelect(selectedValue) {
+    return function () {
+      if (onChange) {
+        onChange(selectedValue);
+      }
+
+      if (closeOnSelect) {
+        close();
+      }
+    };
+  };
+
+  (0, _react.useEffect)(function () {
+    window.addEventListener('click', close);
+    return function () {
+      window.removeEventListener('click', close);
+    };
+  }, []);
+  var current = label;
+
+  var childrenArray = _react["default"].Children.map(children, function (child, i) {
+    if (child.type === _item["default"] && (i === 0 && !label || child.props.value === value)) {
+      current = child.props.children;
+    }
+
+    return /*#__PURE__*/_react["default"].cloneElement(child, child.type === _item["default"] ? {
+      active: child.props.value === value,
+      onClick: onSelect(child.props.value)
+    } : {});
+  });
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    domRef: ref,
+    className: (0, _classnames["default"])('dropdown', className, {
+      'is-active': isOpen,
+      'is-up': up,
+      'is-right': right || align === 'right',
+      'is-hoverable': hoverable
+    })
+  }), /*#__PURE__*/_react["default"].createElement("div", {
+    className: "dropdown-trigger",
+    role: "presentation",
+    onClick: function onClick() {
+      if (disabled) {
+        return;
+      }
+
+      setIsOpen(function (open) {
+        return !open;
+      });
+    }
+  }, /*#__PURE__*/_react["default"].createElement(_button["default"], {
+    disabled: disabled,
+    color: color
+  }, /*#__PURE__*/_react["default"].createElement("span", null, current), icon)), /*#__PURE__*/_react["default"].createElement("div", {
+    className: "dropdown-menu",
+    id: "dropdown-menu",
+    role: "menu"
+  }, /*#__PURE__*/_react["default"].createElement("div", {
+    className: "dropdown-content"
+  }, childrenArray)));
+};
+
+Dropdown.Item = _item["default"];
+Dropdown.Divider = _divider["default"];
+Dropdown.defaultProps = {
+  closeOnSelect: true
+};
+var _default = Dropdown;
+exports["default"] = _default;
+//# sourceMappingURL=dropdown.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/dropdown/index.js":
+/*!******************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/dropdown/index.js ***!
+  \******************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _dropdown = _interopRequireDefault(__webpack_require__(/*! ./dropdown */ "./node_modules/react-bulma-components/cjs/components/dropdown/dropdown.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var _default = _dropdown["default"];
+exports["default"] = _default;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/element/element.js":
+/*!*******************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/element/element.js ***!
+  \*******************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = exports.useElementClassNames = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames3 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _normalizer = __webpack_require__(/*! ../../services/normalizer */ "./node_modules/react-bulma-components/cjs/services/normalizer.js");
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _slicedToArray(arr, i) { return _arrayWithHoles(arr) || _iterableToArrayLimit(arr, i) || _unsupportedIterableToArray(arr, i) || _nonIterableRest(); }
+
+function _nonIterableRest() { throw new TypeError("Invalid attempt to destructure non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
+
+function _unsupportedIterableToArray(o, minLen) { if (!o) return; if (typeof o === "string") return _arrayLikeToArray(o, minLen); var n = Object.prototype.toString.call(o).slice(8, -1); if (n === "Object" && o.constructor) n = o.constructor.name; if (n === "Map" || n === "Set") return Array.from(o); if (n === "Arguments" || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(n)) return _arrayLikeToArray(o, minLen); }
+
+function _arrayLikeToArray(arr, len) { if (len == null || len > arr.length) len = arr.length; for (var i = 0, arr2 = new Array(len); i < len; i++) { arr2[i] = arr[i]; } return arr2; }
+
+function _iterableToArrayLimit(arr, i) { var _i = arr && (typeof Symbol !== "undefined" && arr[Symbol.iterator] || arr["@@iterator"]); if (_i == null) return; var _arr = []; var _n = true; var _d = false; var _s, _e; try { for (_i = _i.call(arr); !(_n = (_s = _i.next()).done); _n = true) { _arr.push(_s.value); if (i && _arr.length === i) break; } } catch (err) { _d = true; _e = err; } finally { try { if (!_n && _i["return"] != null) _i["return"](); } finally { if (_d) throw _e; } } return _arr; }
+
+function _arrayWithHoles(arr) { if (Array.isArray(arr)) return arr; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+var buildResponsiveness = function buildResponsiveness(currentViewport) {
+  var _classnames;
+
+  var _ref = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : {},
+      display = _ref.display,
+      textAlign = _ref.textAlign,
+      textSize = _ref.textSize,
+      only = _ref.only,
+      invisible = _ref.invisible;
+
+  var suffix = only ? '-only' : '';
+  return (0, _classnames3["default"])((_classnames = {}, _defineProperty(_classnames, "is-".concat(display, "-").concat(currentViewport).concat(suffix), display), _defineProperty(_classnames, "has-text-".concat((0, _normalizer.normalizeAlign)(textAlign), "-").concat(currentViewport).concat(suffix), textAlign), _defineProperty(_classnames, "is-size-".concat(textSize, "-").concat(currentViewport).concat(suffix), textSize), _defineProperty(_classnames, "is-invisible-".concat(currentViewport).concat(suffix), invisible), _classnames));
+};
+
+var useElementClassNames = function useElementClassNames(_ref2) {
+  var _classnames2;
+
+  var textColor = _ref2.textColor,
+      backgroundColor = _ref2.backgroundColor,
+      colorVariant = _ref2.colorVariant,
+      flexDirection = _ref2.flexDirection,
+      flexWrap = _ref2.flexWrap,
+      justifyContent = _ref2.justifyContent,
+      alignContent = _ref2.alignContent,
+      alignItems = _ref2.alignItems,
+      flexGrow = _ref2.flexGrow,
+      ratio = _ref2.ratio,
+      clearfix = _ref2.clearfix,
+      paddingless = _ref2.paddingless,
+      pull = _ref2.pull,
+      marginless = _ref2.marginless,
+      overlay = _ref2.overlay,
+      clipped = _ref2.clipped,
+      radiusless = _ref2.radiusless,
+      shadowless = _ref2.shadowless,
+      unselectable = _ref2.unselectable,
+      invisible = _ref2.invisible,
+      clickable = _ref2.clickable,
+      srOnly = _ref2.srOnly,
+      display = _ref2.display,
+      m = _ref2.m,
+      mt = _ref2.mt,
+      mr = _ref2.mr,
+      mb = _ref2.mb,
+      ml = _ref2.ml,
+      mx = _ref2.mx,
+      my = _ref2.my,
+      p = _ref2.p,
+      pt = _ref2.pt,
+      pr = _ref2.pr,
+      pb = _ref2.pb,
+      pl = _ref2.pl,
+      px = _ref2.px,
+      py = _ref2.py,
+      textWeight = _ref2.textWeight,
+      textTransform = _ref2.textTransform,
+      italic = _ref2.italic,
+      textSize = _ref2.textSize,
+      textAlign = _ref2.textAlign,
+      textFamily = _ref2.textFamily,
+      mobile = _ref2.mobile,
+      tablet = _ref2.tablet,
+      desktop = _ref2.desktop,
+      widescreen = _ref2.widescreen,
+      fullhd = _ref2.fullhd,
+      touch = _ref2.touch,
+      untilWidescreen = _ref2.untilWidescreen,
+      untilFullhd = _ref2.untilFullhd,
+      props = _objectWithoutProperties(_ref2, ["textColor", "backgroundColor", "colorVariant", "flexDirection", "flexWrap", "justifyContent", "alignContent", "alignItems", "flexGrow", "ratio", "clearfix", "paddingless", "pull", "marginless", "overlay", "clipped", "radiusless", "shadowless", "unselectable", "invisible", "clickable", "srOnly", "display", "m", "mt", "mr", "mb", "ml", "mx", "my", "p", "pt", "pr", "pb", "pl", "px", "py", "textWeight", "textTransform", "italic", "textSize", "textAlign", "textFamily", "mobile", "tablet", "desktop", "widescreen", "fullhd", "touch", "untilWidescreen", "untilFullhd"]);
+
+  return [(0, _classnames3["default"])((_classnames2 = {}, _defineProperty(_classnames2, "has-text-".concat(textColor), textColor), _defineProperty(_classnames2, "has-background-".concat(backgroundColor), backgroundColor), _defineProperty(_classnames2, "is-".concat(colorVariant), colorVariant), _defineProperty(_classnames2, "is-flex-direction-".concat(flexDirection), flexDirection), _defineProperty(_classnames2, "is-flex-wrap-".concat(flexWrap), flexWrap), _defineProperty(_classnames2, "is-justify-content-".concat(justifyContent), justifyContent), _defineProperty(_classnames2, "is-align-content-".concat(alignContent), alignContent), _defineProperty(_classnames2, "is-align-items-".concat(alignItems), alignItems), _defineProperty(_classnames2, "is-flex-grow-".concat(flexGrow), flexGrow), _defineProperty(_classnames2, 'is-clearfix', clearfix), _defineProperty(_classnames2, "is-pulled-".concat(pull), pull), _defineProperty(_classnames2, 'is-marginless', marginless), _defineProperty(_classnames2, 'is-paddingless', paddingless), _defineProperty(_classnames2, 'is-overlay', overlay), _defineProperty(_classnames2, 'is-clipped', clipped), _defineProperty(_classnames2, 'is-radiusless', radiusless), _defineProperty(_classnames2, 'is-shadowless', shadowless), _defineProperty(_classnames2, 'is-unselectable', unselectable), _defineProperty(_classnames2, "is-".concat(display), display), _defineProperty(_classnames2, 'is-invisible', invisible), _defineProperty(_classnames2, 'is-sr-only', srOnly), _defineProperty(_classnames2, 'is-clickable', clickable), _defineProperty(_classnames2, "m-".concat(m), m), _defineProperty(_classnames2, "mt-".concat(mt), mt), _defineProperty(_classnames2, "mr-".concat(mr), mr), _defineProperty(_classnames2, "mb-".concat(mb), mb), _defineProperty(_classnames2, "ml-".concat(ml), ml), _defineProperty(_classnames2, "mx-".concat(mx), mx), _defineProperty(_classnames2, "my-".concat(my), my), _defineProperty(_classnames2, "p-".concat(p), p), _defineProperty(_classnames2, "pt-".concat(pt), pt), _defineProperty(_classnames2, "pr-".concat(pr), pr), _defineProperty(_classnames2, "pb-".concat(pb), pb), _defineProperty(_classnames2, "pl-".concat(pl), pl), _defineProperty(_classnames2, "px-".concat(px), px), _defineProperty(_classnames2, "py-".concat(py), py), _defineProperty(_classnames2, "has-text-".concat((0, _normalizer.normalizeAlign)(textAlign)), textAlign), _defineProperty(_classnames2, "has-text-weight-".concat(textWeight), textWeight), _defineProperty(_classnames2, "is-size-".concat(textSize), textSize), _defineProperty(_classnames2, "is-".concat(textTransform), textTransform), _defineProperty(_classnames2, "is-family-".concat(textFamily), textFamily), _defineProperty(_classnames2, 'is-italic', italic), _classnames2), buildResponsiveness('mobile', mobile), buildResponsiveness('tablet', tablet), buildResponsiveness('desktop', desktop), buildResponsiveness('widescreen', widescreen), buildResponsiveness('fullhd', fullhd), buildResponsiveness('touch', touch), buildResponsiveness('until-widescreen', untilWidescreen), buildResponsiveness('until-fullhd', untilFullhd)), props];
+};
+
+exports.useElementClassNames = useElementClassNames;
+
+var Element = function Element(_ref3) {
+  var className = _ref3.className,
+      renderAs = _ref3.renderAs,
+      domRef = _ref3.domRef,
+      children = _ref3.children,
+      allProps = _objectWithoutProperties(_ref3, ["className", "renderAs", "domRef", "children"]);
+
+  var RenderAs = renderAs;
+
+  var _useElementClassNames = useElementClassNames(allProps),
+      _useElementClassNames2 = _slicedToArray(_useElementClassNames, 2),
+      classNames = _useElementClassNames2[0],
+      props = _useElementClassNames2[1];
+
+  return /*#__PURE__*/_react["default"].createElement(RenderAs, _extends({
+    ref: domRef,
+    className: (0, _classnames3["default"])(className, classNames) || undefined
+  }, props), children);
+};
+
+Element.defaultProps = {
+  renderAs: 'div'
+};
+var _default = Element;
+exports["default"] = _default;
+//# sourceMappingURL=element.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/element/index.js":
+/*!*****************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/element/index.js ***!
+  \*****************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ./element */ "./node_modules/react-bulma-components/cjs/components/element/element.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var _default = _element["default"];
+exports["default"] = _default;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/footer/footer.js":
+/*!*****************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/footer/footer.js ***!
+  \*****************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Footer = function Footer(_ref) {
+  var className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["className"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('footer', className)
+  }));
+};
+
+Footer.defaultProps = {
+  renderAs: 'footer'
+};
+var _default = Footer;
+exports["default"] = _default;
+//# sourceMappingURL=footer.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/footer/index.js":
+/*!****************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/footer/index.js ***!
+  \****************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _footer = _interopRequireDefault(__webpack_require__(/*! ./footer */ "./node_modules/react-bulma-components/cjs/components/footer/footer.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var _default = _footer["default"];
+exports["default"] = _default;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/form/components/checkbox.js":
+/*!****************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/form/components/checkbox.js ***!
+  \****************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Checkbox = function Checkbox(_ref) {
+  var className = _ref.className,
+      style = _ref.style,
+      disabled = _ref.disabled,
+      children = _ref.children,
+      domRef = _ref.domRef,
+      props = _objectWithoutProperties(_ref, ["className", "style", "disabled", "children", "domRef"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], {
+    renderAs: "label",
+    domRef: domRef,
+    disabled: disabled,
+    className: (0, _classnames["default"])('checkbox', className),
+    style: style
+  }, /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({
+    type: "checkbox",
+    disabled: disabled
+  }, props)), " ", children);
+};
+
+Checkbox.defaultProps = {
+  renderAs: 'input'
+};
+var _default = Checkbox;
+exports["default"] = _default;
+//# sourceMappingURL=checkbox.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/form/components/control.js":
+/*!***************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/form/components/control.js ***!
+  \***************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+var _icon = _interopRequireDefault(__webpack_require__(/*! ../../icon */ "./node_modules/react-bulma-components/cjs/components/icon/index.js"));
+
+var _context = _interopRequireDefault(__webpack_require__(/*! ./field/context */ "./node_modules/react-bulma-components/cjs/components/form/components/field/context.js"));
+
+var _button = _interopRequireDefault(__webpack_require__(/*! ../../button */ "./node_modules/react-bulma-components/cjs/components/button/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Control = function Control(_ref) {
+  var children = _ref.children,
+      className = _ref.className,
+      fullwidth = _ref.fullwidth,
+      loading = _ref.loading,
+      iconType = _ref.iconType,
+      props = _objectWithoutProperties(_ref, ["children", "className", "fullwidth", "loading", "iconType"]);
+
+  var context = (0, _context["default"])();
+
+  var isIcon = function isIcon(child) {
+    return child.type === (iconType || _icon["default"]) && (child.props.align === 'left' || child.props.align === 'right');
+  };
+
+  var updatedChildren = _react["default"].Children.map(children, function (child) {
+    if (!child || !isIcon(child) && child.type !== _button["default"]) {
+      return child;
+    }
+
+    return /*#__PURE__*/_react["default"].cloneElement(child, {
+      size: child.props.size || context.size
+    });
+  });
+
+  var icons = _react["default"].Children.toArray(updatedChildren).filter(isIcon).reduce(function (acc, icon) {
+    return {
+      iconLeft: acc.iconLeft || icon.props.align === 'left',
+      iconRight: acc.iconRight || icon.props.align === 'right'
+    };
+  }, {
+    iconLeft: false,
+    iconRight: false
+  });
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('control', className, {
+      'is-expanded': fullwidth,
+      'has-icons-left': icons.iconLeft,
+      'has-icons-right': icons.iconRight,
+      'is-loading': loading
+    })
+  }), updatedChildren);
+};
+
+Control.defaultProps = {};
+var _default = Control;
+exports["default"] = _default;
+//# sourceMappingURL=control.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/form/components/field/context.js":
+/*!*********************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/form/components/field/context.js ***!
+  \*********************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+function _typeof(obj) { "@babel/helpers - typeof"; if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = exports.FieldContext = void 0;
+
+var _react = _interopRequireWildcard(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+function _getRequireWildcardCache() { if (typeof WeakMap !== "function") return null; var cache = new WeakMap(); _getRequireWildcardCache = function _getRequireWildcardCache() { return cache; }; return cache; }
+
+function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } if (obj === null || _typeof(obj) !== "object" && typeof obj !== "function") { return { "default": obj }; } var cache = _getRequireWildcardCache(); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj["default"] = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
+
+var FieldContext = /*#__PURE__*/_react["default"].createContext({
+  size: undefined
+});
+
+exports.FieldContext = FieldContext;
+
+var useFieldContext = function useFieldContext() {
+  return (0, _react.useContext)(FieldContext);
+};
+
+var _default = useFieldContext;
+exports["default"] = _default;
+//# sourceMappingURL=context.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/form/components/field/field-body.js":
+/*!************************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/form/components/field/field-body.js ***!
+  \************************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var FieldBody = function FieldBody(_ref) {
+  var children = _ref.children,
+      className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["children", "className"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('field-body', className, {})
+  }), children);
+};
+
+FieldBody.defaultProps = {};
+var _default = FieldBody;
+exports["default"] = _default;
+//# sourceMappingURL=field-body.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/form/components/field/field-label.js":
+/*!*************************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/form/components/field/field-label.js ***!
+  \*************************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames2 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+var _context = _interopRequireDefault(__webpack_require__(/*! ./context */ "./node_modules/react-bulma-components/cjs/components/form/components/field/context.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var FieldLabel = function FieldLabel(_ref) {
+  var className = _ref.className,
+      size = _ref.size,
+      props = _objectWithoutProperties(_ref, ["className", "size"]);
+
+  var context = (0, _context["default"])();
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames2["default"])('field-label', className, _defineProperty({}, "is-".concat(size), size || context.size))
+  }));
+};
+
+FieldLabel.defaultProps = {};
+var _default = FieldLabel;
+exports["default"] = _default;
+//# sourceMappingURL=field-label.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/form/components/field/field.js":
+/*!*******************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/form/components/field/field.js ***!
+  \*******************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+function _typeof(obj) { "@babel/helpers - typeof"; if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames2 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _fieldLabel = _interopRequireDefault(__webpack_require__(/*! ./field-label */ "./node_modules/react-bulma-components/cjs/components/form/components/field/field-label.js"));
+
+var _fieldBody = _interopRequireDefault(__webpack_require__(/*! ./field-body */ "./node_modules/react-bulma-components/cjs/components/form/components/field/field-body.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+var _normalizer = __webpack_require__(/*! ../../../../services/normalizer */ "./node_modules/react-bulma-components/cjs/services/normalizer.js");
+
+var _context = _interopRequireWildcard(__webpack_require__(/*! ./context */ "./node_modules/react-bulma-components/cjs/components/form/components/field/context.js"));
+
+function _getRequireWildcardCache() { if (typeof WeakMap !== "function") return null; var cache = new WeakMap(); _getRequireWildcardCache = function _getRequireWildcardCache() { return cache; }; return cache; }
+
+function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } if (obj === null || _typeof(obj) !== "object" && typeof obj !== "function") { return { "default": obj }; } var cache = _getRequireWildcardCache(); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj["default"] = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Field = function Field(_ref) {
+  var _classnames;
+
+  var className = _ref.className,
+      align = _ref.align,
+      multiline = _ref.multiline,
+      horizontal = _ref.horizontal,
+      kind = _ref.kind,
+      size = _ref.size,
+      props = _objectWithoutProperties(_ref, ["className", "align", "multiline", "horizontal", "kind", "size"]);
+
+  var context = (0, _context["default"])();
+  var k = null;
+
+  if (kind === 'addons') {
+    k = 'has-addons';
+  } else if (kind === 'group') {
+    k = 'is-grouped';
+  }
+
+  return /*#__PURE__*/_react["default"].createElement(_context.FieldContext.Provider, {
+    value: {
+      size: size || context.size
+    }
+  }, /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames2["default"])('field', className, (_classnames = {}, _defineProperty(_classnames, "".concat(k), k), _defineProperty(_classnames, "".concat(k, "-").concat((0, _normalizer.normalizeAlign)(align)), k === 'is-grouped' && align), _defineProperty(_classnames, "".concat(k, "-multiline"), k === 'is-grouped' && multiline), _defineProperty(_classnames, 'is-horizontal', horizontal), _classnames))
+  })));
+};
+
+Field.Label = _fieldLabel["default"];
+Field.Body = _fieldBody["default"];
+Field.defaultProps = {};
+var _default = Field;
+exports["default"] = _default;
+//# sourceMappingURL=field.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/form/components/field/index.js":
+/*!*******************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/form/components/field/index.js ***!
+  \*******************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+Object.defineProperty(exports, "default", {
+  enumerable: true,
+  get: function get() {
+    return _field["default"];
+  }
+});
+
+var _field = _interopRequireDefault(__webpack_require__(/*! ./field */ "./node_modules/react-bulma-components/cjs/components/form/components/field/field.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/form/components/help.js":
+/*!************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/form/components/help.js ***!
+  \************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames2 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Help = function Help(_ref) {
+  var className = _ref.className,
+      children = _ref.children,
+      color = _ref.color,
+      props = _objectWithoutProperties(_ref, ["className", "children", "color"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames2["default"])('help', className, _defineProperty({}, "is-".concat(color), color))
+  }), children);
+};
+
+Help.defaultProps = {
+  renderAs: 'p'
+};
+var _default = Help;
+exports["default"] = _default;
+//# sourceMappingURL=help.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/form/components/input-file.js":
+/*!******************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/form/components/input-file.js ***!
+  \******************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+function _typeof(obj) { "@babel/helpers - typeof"; if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireWildcard(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames2 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+var _context = _interopRequireDefault(__webpack_require__(/*! ./field/context */ "./node_modules/react-bulma-components/cjs/components/form/components/field/context.js"));
+
+var _normalizer = __webpack_require__(/*! ../../../services/normalizer */ "./node_modules/react-bulma-components/cjs/services/normalizer.js");
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _getRequireWildcardCache() { if (typeof WeakMap !== "function") return null; var cache = new WeakMap(); _getRequireWildcardCache = function _getRequireWildcardCache() { return cache; }; return cache; }
+
+function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } if (obj === null || _typeof(obj) !== "object" && typeof obj !== "function") { return { "default": obj }; } var cache = _getRequireWildcardCache(); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj["default"] = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var InputFile = function InputFile(_ref) {
+  var _classnames;
+
+  var className = _ref.className,
+      style = _ref.style,
+      onChange = _ref.onChange,
+      color = _ref.color,
+      size = _ref.size,
+      fullwidth = _ref.fullwidth,
+      align = _ref.align,
+      boxed = _ref.boxed,
+      name = _ref.name,
+      label = _ref.label,
+      icon = _ref.icon,
+      inputProps = _ref.inputProps,
+      filename = _ref.filename,
+      value = _ref.value,
+      props = _objectWithoutProperties(_ref, ["className", "style", "onChange", "color", "size", "fullwidth", "align", "boxed", "name", "label", "icon", "inputProps", "filename", "value"]);
+
+  var ref = (0, _react.useRef)();
+  var context = (0, _context["default"])();
+  var calculatedSize = size || context.size;
+  (0, _react.useEffect)(function () {
+    if (!ref.current) {
+      return;
+    }
+
+    if (value) {
+      ref.current.files = value;
+    } else {
+      ref.current.value = '';
+    }
+  }, [value]);
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({
+    style: style
+  }, props, {
+    className: (0, _classnames2["default"])('file', className, (_classnames = {}, _defineProperty(_classnames, "is-".concat(calculatedSize), calculatedSize), _defineProperty(_classnames, "is-".concat(color), color), _defineProperty(_classnames, "is-".concat((0, _normalizer.normalizeAlign)(align)), align), _defineProperty(_classnames, 'has-name', !!filename), _defineProperty(_classnames, 'is-boxed', boxed), _defineProperty(_classnames, 'is-fullwidth', fullwidth), _classnames))
+  }), /*#__PURE__*/_react["default"].createElement("label", {
+    className: "file-label"
+  }, /*#__PURE__*/_react["default"].createElement("input", _extends({}, inputProps, {
+    name: name,
+    type: "file",
+    className: "file-input",
+    onChange: onChange,
+    ref: ref
+  })), /*#__PURE__*/_react["default"].createElement("span", {
+    className: "file-cta"
+  }, icon && /*#__PURE__*/_react["default"].createElement("span", {
+    className: "file-icon"
+  }, icon), /*#__PURE__*/_react["default"].createElement("span", {
+    className: "file-label"
+  }, label)), filename && /*#__PURE__*/_react["default"].createElement("span", {
+    className: "file-name"
+  }, filename)));
+};
+
+InputFile.defaultProps = {
+  label: 'Choose a file...',
+  inputProps: {}
+};
+var _default = InputFile;
+exports["default"] = _default;
+//# sourceMappingURL=input-file.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/form/components/input.js":
+/*!*************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/form/components/input.js ***!
+  \*************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames2 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+var _context = _interopRequireDefault(__webpack_require__(/*! ./field/context */ "./node_modules/react-bulma-components/cjs/components/form/components/field/context.js"));
+
+var _normalizer = __webpack_require__(/*! ../../../services/normalizer */ "./node_modules/react-bulma-components/cjs/services/normalizer.js");
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Input = function Input(_ref) {
+  var _classnames;
+
+  var className = _ref.className,
+      size = _ref.size,
+      color = _ref.color,
+      readOnly = _ref.readOnly,
+      isStatic = _ref.isStatic,
+      status = _ref.status,
+      rounded = _ref.rounded,
+      props = _objectWithoutProperties(_ref, ["className", "size", "color", "readOnly", "isStatic", "status", "rounded"]);
+
+  var context = (0, _context["default"])();
+  var calculatedSize = size || context.size;
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    readOnly: readOnly || isStatic,
+    className: (0, _classnames2["default"])('input', className, (_classnames = {
+      'is-static': isStatic
+    }, _defineProperty(_classnames, "is-".concat((0, _normalizer.normalizeStatus)(status)), status), _defineProperty(_classnames, 'is-rounded', rounded), _defineProperty(_classnames, "is-".concat(calculatedSize), calculatedSize), _defineProperty(_classnames, "is-".concat(color), color), _classnames))
+  }));
+};
+
+Input.defaultProps = {
+  renderAs: 'input'
+};
+var _default = Input;
+exports["default"] = _default;
+//# sourceMappingURL=input.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/form/components/label.js":
+/*!*************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/form/components/label.js ***!
+  \*************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames2 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+var _context = _interopRequireDefault(__webpack_require__(/*! ./field/context */ "./node_modules/react-bulma-components/cjs/components/form/components/field/context.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Label = function Label(_ref) {
+  var children = _ref.children,
+      className = _ref.className,
+      size = _ref.size,
+      props = _objectWithoutProperties(_ref, ["children", "className", "size"]);
+
+  var context = (0, _context["default"])();
+  var calculatedSize = size || context.size;
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames2["default"])('label', className, _defineProperty({}, "is-".concat(calculatedSize), calculatedSize))
+  }), children);
+};
+
+Label.defaultProps = {
+  renderAs: 'label'
+};
+var _default = Label;
+exports["default"] = _default;
+//# sourceMappingURL=label.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/form/components/radio.js":
+/*!*************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/form/components/radio.js ***!
+  \*************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Radio = function Radio(_ref) {
+  var className = _ref.className,
+      style = _ref.style,
+      disabled = _ref.disabled,
+      checked = _ref.checked,
+      value = _ref.value,
+      name = _ref.name,
+      children = _ref.children,
+      domRef = _ref.domRef,
+      props = _objectWithoutProperties(_ref, ["className", "style", "disabled", "checked", "value", "name", "children", "domRef"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], {
+    renderAs: "label",
+    domRef: domRef,
+    disabled: disabled,
+    className: (0, _classnames["default"])('radio', className),
+    style: style
+  }, /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    name: name,
+    checked: checked,
+    type: "radio",
+    value: value,
+    disabled: disabled
+  })), ' ', children);
+};
+
+Radio.defaultProps = {
+  renderAs: 'input'
+};
+var _default = Radio;
+exports["default"] = _default;
+//# sourceMappingURL=radio.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/form/components/select.js":
+/*!**************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/form/components/select.js ***!
+  \**************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames3 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+var _context = _interopRequireDefault(__webpack_require__(/*! ./field/context */ "./node_modules/react-bulma-components/cjs/components/form/components/field/context.js"));
+
+var _normalizer = __webpack_require__(/*! ../../../services/normalizer */ "./node_modules/react-bulma-components/cjs/services/normalizer.js");
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Select = function Select(_ref) {
+  var _classnames;
+
+  var className = _ref.className,
+      rounded = _ref.rounded,
+      style = _ref.style,
+      size = _ref.size,
+      color = _ref.color,
+      loading = _ref.loading,
+      status = _ref.status,
+      disabled = _ref.disabled,
+      value = _ref.value,
+      multiple = _ref.multiple,
+      children = _ref.children,
+      name = _ref.name,
+      domRef = _ref.domRef,
+      props = _objectWithoutProperties(_ref, ["className", "rounded", "style", "size", "color", "loading", "status", "disabled", "value", "multiple", "children", "name", "domRef"]);
+
+  var context = (0, _context["default"])();
+  var calculatedSize = size || context.size;
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], {
+    domRef: domRef,
+    className: (0, _classnames3["default"])('select', className, (_classnames = {}, _defineProperty(_classnames, "is-".concat(calculatedSize), calculatedSize), _defineProperty(_classnames, "is-".concat(color), color), _defineProperty(_classnames, 'is-loading', loading), _defineProperty(_classnames, 'is-multiple', multiple), _defineProperty(_classnames, 'is-rounded', rounded), _classnames)),
+    style: style
+  }, /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames3["default"])(_defineProperty({}, "is-".concat((0, _normalizer.normalizeStatus)(status)), status)),
+    multiple: multiple,
+    value: value,
+    disabled: disabled,
+    name: name
+  }), children));
+};
+
+Select.defaultProps = {
+  renderAs: 'select'
+};
+var _default = Select;
+exports["default"] = _default;
+//# sourceMappingURL=select.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/form/components/textarea.js":
+/*!****************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/form/components/textarea.js ***!
+  \****************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames2 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+var _context = _interopRequireDefault(__webpack_require__(/*! ./field/context */ "./node_modules/react-bulma-components/cjs/components/form/components/field/context.js"));
+
+var _normalizer = __webpack_require__(/*! ../../../services/normalizer */ "./node_modules/react-bulma-components/cjs/services/normalizer.js");
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Textarea = function Textarea(_ref) {
+  var _classnames;
+
+  var className = _ref.className,
+      size = _ref.size,
+      color = _ref.color,
+      status = _ref.status,
+      fixedSize = _ref.fixedSize,
+      props = _objectWithoutProperties(_ref, ["className", "size", "color", "status", "fixedSize"]);
+
+  var context = (0, _context["default"])();
+  var calculatedSize = size || context.size;
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames2["default"])('textarea', className, (_classnames = {}, _defineProperty(_classnames, "is-".concat((0, _normalizer.normalizeStatus)(status)), status), _defineProperty(_classnames, 'has-fixed-size', fixedSize), _defineProperty(_classnames, "is-".concat(calculatedSize), calculatedSize), _defineProperty(_classnames, "is-".concat(color), color), _classnames))
+  }));
+};
+
+Textarea.defaultProps = {
+  renderAs: 'textarea'
+};
+var _default = Textarea;
+exports["default"] = _default;
+//# sourceMappingURL=textarea.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/form/index.js":
+/*!**************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/form/index.js ***!
+  \**************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+Object.defineProperty(exports, "Field", {
+  enumerable: true,
+  get: function get() {
+    return _field["default"];
+  }
+});
+Object.defineProperty(exports, "Control", {
+  enumerable: true,
+  get: function get() {
+    return _control["default"];
+  }
+});
+Object.defineProperty(exports, "Input", {
+  enumerable: true,
+  get: function get() {
+    return _input["default"];
+  }
+});
+Object.defineProperty(exports, "Label", {
+  enumerable: true,
+  get: function get() {
+    return _label["default"];
+  }
+});
+Object.defineProperty(exports, "Textarea", {
+  enumerable: true,
+  get: function get() {
+    return _textarea["default"];
+  }
+});
+Object.defineProperty(exports, "Select", {
+  enumerable: true,
+  get: function get() {
+    return _select["default"];
+  }
+});
+Object.defineProperty(exports, "Checkbox", {
+  enumerable: true,
+  get: function get() {
+    return _checkbox["default"];
+  }
+});
+Object.defineProperty(exports, "Radio", {
+  enumerable: true,
+  get: function get() {
+    return _radio["default"];
+  }
+});
+Object.defineProperty(exports, "Help", {
+  enumerable: true,
+  get: function get() {
+    return _help["default"];
+  }
+});
+Object.defineProperty(exports, "InputFile", {
+  enumerable: true,
+  get: function get() {
+    return _inputFile["default"];
+  }
+});
+
+var _field = _interopRequireDefault(__webpack_require__(/*! ./components/field */ "./node_modules/react-bulma-components/cjs/components/form/components/field/index.js"));
+
+var _control = _interopRequireDefault(__webpack_require__(/*! ./components/control */ "./node_modules/react-bulma-components/cjs/components/form/components/control.js"));
+
+var _input = _interopRequireDefault(__webpack_require__(/*! ./components/input */ "./node_modules/react-bulma-components/cjs/components/form/components/input.js"));
+
+var _label = _interopRequireDefault(__webpack_require__(/*! ./components/label */ "./node_modules/react-bulma-components/cjs/components/form/components/label.js"));
+
+var _textarea = _interopRequireDefault(__webpack_require__(/*! ./components/textarea */ "./node_modules/react-bulma-components/cjs/components/form/components/textarea.js"));
+
+var _select = _interopRequireDefault(__webpack_require__(/*! ./components/select */ "./node_modules/react-bulma-components/cjs/components/form/components/select.js"));
+
+var _checkbox = _interopRequireDefault(__webpack_require__(/*! ./components/checkbox */ "./node_modules/react-bulma-components/cjs/components/form/components/checkbox.js"));
+
+var _radio = _interopRequireDefault(__webpack_require__(/*! ./components/radio */ "./node_modules/react-bulma-components/cjs/components/form/components/radio.js"));
+
+var _help = _interopRequireDefault(__webpack_require__(/*! ./components/help */ "./node_modules/react-bulma-components/cjs/components/form/components/help.js"));
+
+var _inputFile = _interopRequireDefault(__webpack_require__(/*! ./components/input-file */ "./node_modules/react-bulma-components/cjs/components/form/components/input-file.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/heading/heading.js":
+/*!*******************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/heading/heading.js ***!
+  \*******************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames2 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Heading = function Heading(_ref) {
+  var _classnames;
+
+  var children = _ref.children,
+      className = _ref.className,
+      size = _ref.size,
+      subtitle = _ref.subtitle,
+      weight = _ref.weight,
+      spaced = _ref.spaced,
+      heading = _ref.heading,
+      props = _objectWithoutProperties(_ref, ["children", "className", "size", "subtitle", "weight", "spaced", "heading"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames2["default"])(className, (_classnames = {
+      title: !subtitle && !heading,
+      subtitle: subtitle,
+      heading: heading
+    }, _defineProperty(_classnames, "is-".concat(size), size), _defineProperty(_classnames, "has-text-weight-".concat(weight), weight), _defineProperty(_classnames, 'is-spaced', spaced && !subtitle), _classnames))
+  }), children);
+};
+
+Heading.defaultProps = {
+  renderAs: 'h1'
+};
+var _default = Heading;
+exports["default"] = _default;
+//# sourceMappingURL=heading.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/heading/index.js":
+/*!*****************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/heading/index.js ***!
+  \*****************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _heading = _interopRequireDefault(__webpack_require__(/*! ./heading */ "./node_modules/react-bulma-components/cjs/components/heading/heading.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var _default = _heading["default"];
+exports["default"] = _default;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/hero/components/hero-body.js":
+/*!*****************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/hero/components/hero-body.js ***!
+  \*****************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var HeroBody = function HeroBody(_ref) {
+  var className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["className"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])(className, 'hero-body')
+  }));
+};
+
+HeroBody.defaultProps = {
+  renderAs: 'div'
+};
+var _default = HeroBody;
+exports["default"] = _default;
+//# sourceMappingURL=hero-body.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/hero/components/hero-footer.js":
+/*!*******************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/hero/components/hero-footer.js ***!
+  \*******************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var HeroFooter = function HeroFooter(_ref) {
+  var className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["className"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])(className, 'hero-foot')
+  }));
+};
+
+HeroFooter.defaultProps = {
+  renderAs: 'footer'
+};
+var _default = HeroFooter;
+exports["default"] = _default;
+//# sourceMappingURL=hero-footer.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/hero/components/hero-header.js":
+/*!*******************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/hero/components/hero-header.js ***!
+  \*******************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var HeroHeader = function HeroHeader(_ref) {
+  var className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["className"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])(className, 'hero-head')
+  }));
+};
+
+HeroHeader.defaultProps = {
+  renderAs: 'header'
+};
+var _default = HeroHeader;
+exports["default"] = _default;
+//# sourceMappingURL=hero-header.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/hero/hero.js":
+/*!*************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/hero/hero.js ***!
+  \*************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames2 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _heroHeader = _interopRequireDefault(__webpack_require__(/*! ./components/hero-header */ "./node_modules/react-bulma-components/cjs/components/hero/components/hero-header.js"));
+
+var _heroBody = _interopRequireDefault(__webpack_require__(/*! ./components/hero-body */ "./node_modules/react-bulma-components/cjs/components/hero/components/hero-body.js"));
+
+var _heroFooter = _interopRequireDefault(__webpack_require__(/*! ./components/hero-footer */ "./node_modules/react-bulma-components/cjs/components/hero/components/hero-footer.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Hero = function Hero(_ref) {
+  var _classnames;
+
+  var children = _ref.children,
+      className = _ref.className,
+      color = _ref.color,
+      gradient = _ref.gradient,
+      size = _ref.size,
+      hasNavbar = _ref.hasNavbar,
+      props = _objectWithoutProperties(_ref, ["children", "className", "color", "gradient", "size", "hasNavbar"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames2["default"])('hero', className, (_classnames = {}, _defineProperty(_classnames, "is-".concat(color), color), _defineProperty(_classnames, "is-".concat(size), size && !hasNavbar), _defineProperty(_classnames, 'is-bold', gradient), _defineProperty(_classnames, 'is-fullheight-with-navbar', hasNavbar), _classnames))
+  }), children);
+};
+
+Hero.Header = _heroHeader["default"];
+Hero.Body = _heroBody["default"];
+Hero.Footer = _heroFooter["default"];
+Hero.defaultProps = {
+  renderAs: 'section'
+};
+var _default = Hero;
+exports["default"] = _default;
+//# sourceMappingURL=hero.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/hero/index.js":
+/*!**************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/hero/index.js ***!
+  \**************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _hero = _interopRequireDefault(__webpack_require__(/*! ./hero */ "./node_modules/react-bulma-components/cjs/components/hero/hero.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var _default = _hero["default"];
+exports["default"] = _default;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/icon/icon.js":
+/*!*************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/icon/icon.js ***!
+  \*************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames2 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Icon = function Icon(_ref) {
+  var _classnames;
+
+  var size = _ref.size,
+      color = _ref.color,
+      className = _ref.className,
+      align = _ref.align,
+      text = _ref.text,
+      props = _objectWithoutProperties(_ref, ["size", "color", "className", "align", "text"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames2["default"])(className, (_classnames = {
+      icon: !text
+    }, _defineProperty(_classnames, "is-".concat(size), size), _defineProperty(_classnames, "is-".concat(align), align), _defineProperty(_classnames, "has-text-".concat(color), color), _defineProperty(_classnames, 'icon-text', text), _classnames))
+  }));
+};
+
+Icon.defaultProps = {
+  renderAs: 'span'
+};
+var _default = Icon;
+exports["default"] = _default;
+//# sourceMappingURL=icon.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/icon/index.js":
+/*!**************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/icon/index.js ***!
+  \**************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _icon = _interopRequireDefault(__webpack_require__(/*! ./icon */ "./node_modules/react-bulma-components/cjs/components/icon/icon.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var _default = _icon["default"];
+exports["default"] = _default;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/image/image.js":
+/*!***************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/image/image.js ***!
+  \***************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+function _typeof(obj) { "@babel/helpers - typeof"; if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireWildcard(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames2 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _getRequireWildcardCache() { if (typeof WeakMap !== "function") return null; var cache = new WeakMap(); _getRequireWildcardCache = function _getRequireWildcardCache() { return cache; }; return cache; }
+
+function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } if (obj === null || _typeof(obj) !== "object" && typeof obj !== "function") { return { "default": obj }; } var cache = _getRequireWildcardCache(); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj["default"] = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _slicedToArray(arr, i) { return _arrayWithHoles(arr) || _iterableToArrayLimit(arr, i) || _unsupportedIterableToArray(arr, i) || _nonIterableRest(); }
+
+function _nonIterableRest() { throw new TypeError("Invalid attempt to destructure non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
+
+function _unsupportedIterableToArray(o, minLen) { if (!o) return; if (typeof o === "string") return _arrayLikeToArray(o, minLen); var n = Object.prototype.toString.call(o).slice(8, -1); if (n === "Object" && o.constructor) n = o.constructor.name; if (n === "Map" || n === "Set") return Array.from(o); if (n === "Arguments" || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(n)) return _arrayLikeToArray(o, minLen); }
+
+function _arrayLikeToArray(arr, len) { if (len == null || len > arr.length) len = arr.length; for (var i = 0, arr2 = new Array(len); i < len; i++) { arr2[i] = arr[i]; } return arr2; }
+
+function _iterableToArrayLimit(arr, i) { var _i = arr && (typeof Symbol !== "undefined" && arr[Symbol.iterator] || arr["@@iterator"]); if (_i == null) return; var _arr = []; var _n = true; var _d = false; var _s, _e; try { for (_i = _i.call(arr); !(_n = (_s = _i.next()).done); _n = true) { _arr.push(_s.value); if (i && _arr.length === i) break; } } catch (err) { _d = true; _e = err; } finally { try { if (!_n && _i["return"] != null) _i["return"](); } finally { if (_d) throw _e; } } return _arr; }
+
+function _arrayWithHoles(arr) { if (Array.isArray(arr)) return arr; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Image = function Image(_ref) {
+  var _classnames;
+
+  var className = _ref.className,
+      alt = _ref.alt,
+      size = _ref.size,
+      fallback = _ref.fallback,
+      rounded = _ref.rounded,
+      src = _ref.src,
+      fullwidth = _ref.fullwidth,
+      props = _objectWithoutProperties(_ref, ["className", "alt", "size", "fallback", "rounded", "src", "fullwidth"]);
+
+  var _useState = (0, _react.useState)({
+    src: src
+  }),
+      _useState2 = _slicedToArray(_useState, 2),
+      state = _useState2[0],
+      setState = _useState2[1];
+
+  (0, _react.useEffect)(function () {
+    setState({
+      src: src
+    });
+  }, [src]);
+  var s = size;
+
+  if (typeof size === 'number') {
+    s = "".concat(s, "x").concat(s);
+  }
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames2["default"])('image', className, (_classnames = {}, _defineProperty(_classnames, "is-".concat(s), s), _defineProperty(_classnames, 'is-fullwidth', fullwidth), _classnames))
+  }), /*#__PURE__*/_react["default"].createElement("img", {
+    className: (0, _classnames2["default"])({
+      'is-rounded': rounded
+    }),
+    onError: function onError() {
+      return state.src !== fallback && setState({
+        src: fallback
+      });
+    },
+    src: state.src,
+    alt: alt
+  }));
+};
+
+Image.defaultProps = {
+  renderAs: 'figure'
+};
+var _default = Image;
+exports["default"] = _default;
+//# sourceMappingURL=image.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/image/index.js":
+/*!***************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/image/index.js ***!
+  \***************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _image = _interopRequireDefault(__webpack_require__(/*! ./image */ "./node_modules/react-bulma-components/cjs/components/image/image.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var _default = _image["default"];
+exports["default"] = _default;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/level/components/level-item.js":
+/*!*******************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/level/components/level-item.js ***!
+  \*******************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var LevelItem = function LevelItem(_ref) {
+  var children = _ref.children,
+      className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["children", "className"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('level-item', className, {})
+  }), children);
+};
+
+var _default = LevelItem;
+exports["default"] = _default;
+//# sourceMappingURL=level-item.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/level/components/level-side.js":
+/*!*******************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/level/components/level-side.js ***!
+  \*******************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames2 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var LevelSide = function LevelSide(_ref) {
+  var className = _ref.className,
+      align = _ref.align,
+      props = _objectWithoutProperties(_ref, ["className", "align"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames2["default"])(className, _defineProperty({}, "level-".concat(align), align))
+  }));
+};
+
+LevelSide.defaultProps = {
+  align: 'left'
+};
+var _default = LevelSide;
+exports["default"] = _default;
+//# sourceMappingURL=level-side.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/level/index.js":
+/*!***************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/level/index.js ***!
+  \***************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _level = _interopRequireDefault(__webpack_require__(/*! ./level */ "./node_modules/react-bulma-components/cjs/components/level/level.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var _default = _level["default"];
+exports["default"] = _default;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/level/level.js":
+/*!***************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/level/level.js ***!
+  \***************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames2 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _levelSide = _interopRequireDefault(__webpack_require__(/*! ./components/level-side */ "./node_modules/react-bulma-components/cjs/components/level/components/level-side.js"));
+
+var _levelItem = _interopRequireDefault(__webpack_require__(/*! ./components/level-item */ "./node_modules/react-bulma-components/cjs/components/level/components/level-item.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Level = function Level(_ref) {
+  var children = _ref.children,
+      className = _ref.className,
+      breakpoint = _ref.breakpoint,
+      props = _objectWithoutProperties(_ref, ["children", "className", "breakpoint"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames2["default"])('level', className, _defineProperty({}, "is-".concat(breakpoint), breakpoint))
+  }), children);
+};
+
+Level.Side = _levelSide["default"];
+Level.Item = _levelItem["default"];
+Level.defaultProps = {
+  renderAs: 'nav'
+};
+var _default = Level;
+exports["default"] = _default;
+//# sourceMappingURL=level.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/loader/index.js":
+/*!****************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/loader/index.js ***!
+  \****************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _loader = _interopRequireDefault(__webpack_require__(/*! ./loader */ "./node_modules/react-bulma-components/cjs/components/loader/loader.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var _default = _loader["default"];
+exports["default"] = _default;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/loader/loader.js":
+/*!*****************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/loader/loader.js ***!
+  \*****************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Loader = function Loader(_ref) {
+  var children = _ref.children,
+      className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["children", "className"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('loader', className)
+  }), children);
+};
+
+var _default = Loader;
+exports["default"] = _default;
+//# sourceMappingURL=loader.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/media/components/media-item.js":
+/*!*******************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/media/components/media-item.js ***!
+  \*******************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames2 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var MediaItem = function MediaItem(_ref) {
+  var children = _ref.children,
+      className = _ref.className,
+      align = _ref.align,
+      props = _objectWithoutProperties(_ref, ["children", "className", "align"]);
+
+  var p = align === 'center' ? 'content' : align;
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames2["default"])(className, _defineProperty({}, "media-".concat(p), p))
+  }), children);
+};
+
+MediaItem.defaultProps = {
+  align: 'center'
+};
+var _default = MediaItem;
+exports["default"] = _default;
+//# sourceMappingURL=media-item.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/media/index.js":
+/*!***************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/media/index.js ***!
+  \***************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _media = _interopRequireDefault(__webpack_require__(/*! ./media */ "./node_modules/react-bulma-components/cjs/components/media/media.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var _default = _media["default"];
+exports["default"] = _default;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/media/media.js":
+/*!***************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/media/media.js ***!
+  \***************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _mediaItem = _interopRequireDefault(__webpack_require__(/*! ./components/media-item */ "./node_modules/react-bulma-components/cjs/components/media/components/media-item.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Media = function Media(_ref) {
+  var children = _ref.children,
+      className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["children", "className"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('media', className, {})
+  }), children);
+};
+
+Media.Item = _mediaItem["default"];
+Media.defaultProps = {
+  renderAs: 'article'
+};
+var _default = Media;
+exports["default"] = _default;
+//# sourceMappingURL=media.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/menu/components/list/components/item.js":
+/*!****************************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/menu/components/list/components/item.js ***!
+  \****************************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _list = _interopRequireDefault(__webpack_require__(/*! ../list */ "./node_modules/react-bulma-components/cjs/components/menu/components/list/list.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var MenuListItem = function MenuListItem(_ref) {
+  var children = _ref.children,
+      active = _ref.active,
+      className = _ref.className,
+      ref = _ref.domRef,
+      props = _objectWithoutProperties(_ref, ["children", "active", "className", "domRef"]);
+
+  if (typeof children !== 'string' && _react["default"].Children.toArray(children).length === 1 && _react["default"].Children.only(children).type === _list["default"]) {
+    var child = _react["default"].Children.only(children);
+
+    return /*#__PURE__*/_react["default"].createElement("li", {
+      ref: ref
+    }, /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({
+      className: (0, _classnames["default"])(className, {
+        'is-active': active
+      })
+    }, props), child.props.title), /*#__PURE__*/_react["default"].cloneElement(child, {
+      title: undefined
+    }));
+  }
+
+  return /*#__PURE__*/_react["default"].createElement("li", {
+    ref: ref
+  }, /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({
+    className: (0, _classnames["default"])(className, {
+      'is-active': active
+    })
+  }, props), children));
+};
+
+MenuListItem.defaultProps = {
+  renderAs: 'a'
+};
+var _default = MenuListItem;
+exports["default"] = _default;
+//# sourceMappingURL=item.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/menu/components/list/index.js":
+/*!******************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/menu/components/list/index.js ***!
+  \******************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+Object.defineProperty(exports, "default", {
+  enumerable: true,
+  get: function get() {
+    return _list["default"];
+  }
+});
+
+var _list = _interopRequireDefault(__webpack_require__(/*! ./list */ "./node_modules/react-bulma-components/cjs/components/menu/components/list/list.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/menu/components/list/list.js":
+/*!*****************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/menu/components/list/list.js ***!
+  \*****************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _item = _interopRequireDefault(__webpack_require__(/*! ./components/item */ "./node_modules/react-bulma-components/cjs/components/menu/components/list/components/item.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var MenuList = function MenuList(_ref) {
+  var className = _ref.className,
+      title = _ref.title,
+      props = _objectWithoutProperties(_ref, ["className", "title"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_react["default"].Fragment, null, title && /*#__PURE__*/_react["default"].createElement("p", {
+    className: "menu-label"
+  }, title), /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({
+    className: (0, _classnames["default"])('menu-list', className)
+  }, props)));
+};
+
+MenuList.Item = _item["default"];
+MenuList.defaultProps = {
+  renderAs: 'ul'
+};
+var _default = MenuList;
+exports["default"] = _default;
+//# sourceMappingURL=list.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/menu/index.js":
+/*!**************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/menu/index.js ***!
+  \**************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _menu = _interopRequireDefault(__webpack_require__(/*! ./menu */ "./node_modules/react-bulma-components/cjs/components/menu/menu.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var _default = _menu["default"];
+exports["default"] = _default;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/menu/menu.js":
+/*!*************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/menu/menu.js ***!
+  \*************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _list = _interopRequireDefault(__webpack_require__(/*! ./components/list */ "./node_modules/react-bulma-components/cjs/components/menu/components/list/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Menu = function Menu(_ref) {
+  var className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["className"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('menu', className)
+  }));
+};
+
+Menu.List = _list["default"];
+Menu.defaultProps = {
+  renderAs: 'aside'
+};
+var _default = Menu;
+exports["default"] = _default;
+//# sourceMappingURL=menu.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/message/components/body.js":
+/*!***************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/message/components/body.js ***!
+  \***************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var MessageBody = function MessageBody(_ref) {
+  var children = _ref.children,
+      className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["children", "className"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('message-body', className)
+  }), children);
+};
+
+var _default = MessageBody;
+exports["default"] = _default;
+//# sourceMappingURL=body.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/message/components/header.js":
+/*!*****************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/message/components/header.js ***!
+  \*****************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var MessageHeader = function MessageHeader(_ref) {
+  var children = _ref.children,
+      className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["children", "className"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('message-header', className)
+  }), children);
+};
+
+var _default = MessageHeader;
+exports["default"] = _default;
+//# sourceMappingURL=header.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/message/index.js":
+/*!*****************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/message/index.js ***!
+  \*****************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _message = _interopRequireDefault(__webpack_require__(/*! ./message */ "./node_modules/react-bulma-components/cjs/components/message/message.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var _default = _message["default"];
+exports["default"] = _default;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/message/message.js":
+/*!*******************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/message/message.js ***!
+  \*******************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames2 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _body = _interopRequireDefault(__webpack_require__(/*! ./components/body */ "./node_modules/react-bulma-components/cjs/components/message/components/body.js"));
+
+var _header = _interopRequireDefault(__webpack_require__(/*! ./components/header */ "./node_modules/react-bulma-components/cjs/components/message/components/header.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Message = function Message(_ref) {
+  var _classnames;
+
+  var children = _ref.children,
+      className = _ref.className,
+      color = _ref.color,
+      size = _ref.size,
+      props = _objectWithoutProperties(_ref, ["children", "className", "color", "size"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames2["default"])('message', className, (_classnames = {}, _defineProperty(_classnames, "is-".concat(color), color), _defineProperty(_classnames, "is-".concat(size), size), _classnames))
+  }), children);
+};
+
+Message.Body = _body["default"];
+Message.Header = _header["default"];
+Message.defaultProps = {
+  renderAs: 'article'
+};
+var _default = Message;
+exports["default"] = _default;
+//# sourceMappingURL=message.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/modal/components/card/body.js":
+/*!******************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/modal/components/card/body.js ***!
+  \******************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var ModalCardBody = function ModalCardBody(_ref) {
+  var children = _ref.children,
+      className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["children", "className"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('modal-card-body', className)
+  }), children);
+};
+
+ModalCardBody.defaultProps = {
+  renderAs: 'section'
+};
+var _default = ModalCardBody;
+exports["default"] = _default;
+//# sourceMappingURL=body.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/modal/components/card/card.js":
+/*!******************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/modal/components/card/card.js ***!
+  \******************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _header = _interopRequireDefault(__webpack_require__(/*! ./header */ "./node_modules/react-bulma-components/cjs/components/modal/components/card/header.js"));
+
+var _body = _interopRequireDefault(__webpack_require__(/*! ./body */ "./node_modules/react-bulma-components/cjs/components/modal/components/card/body.js"));
+
+var _footer = _interopRequireDefault(__webpack_require__(/*! ./footer */ "./node_modules/react-bulma-components/cjs/components/modal/components/card/footer.js"));
+
+var _title = _interopRequireDefault(__webpack_require__(/*! ./title */ "./node_modules/react-bulma-components/cjs/components/modal/components/card/title.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var ModalCard = function ModalCard(_ref) {
+  var className = _ref.className,
+      onClose = _ref.onClose,
+      children = _ref.children,
+      props = _objectWithoutProperties(_ref, ["className", "onClose", "children"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('modal-card', className)
+  }), children);
+};
+
+ModalCard.Header = _header["default"];
+ModalCard.Body = _body["default"];
+ModalCard.Footer = _footer["default"];
+ModalCard.Title = _title["default"];
+ModalCard.defaultProps = {};
+var _default = ModalCard;
+exports["default"] = _default;
+//# sourceMappingURL=card.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/modal/components/card/footer.js":
+/*!********************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/modal/components/card/footer.js ***!
+  \********************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var ModalCardFoot = function ModalCardFoot(_ref) {
+  var children = _ref.children,
+      className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["children", "className"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('modal-card-foot', className)
+  }), children);
+};
+
+ModalCardFoot.defaultProps = {
+  renderAs: 'footer'
+};
+var _default = ModalCardFoot;
+exports["default"] = _default;
+//# sourceMappingURL=footer.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/modal/components/card/header.js":
+/*!********************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/modal/components/card/header.js ***!
+  \********************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _button = _interopRequireDefault(__webpack_require__(/*! ../../../button */ "./node_modules/react-bulma-components/cjs/components/button/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+var _context = _interopRequireDefault(__webpack_require__(/*! ../../context */ "./node_modules/react-bulma-components/cjs/components/modal/context.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var ModalCardHead = function ModalCardHead(_ref) {
+  var children = _ref.children,
+      className = _ref.className,
+      showClose = _ref.showClose,
+      props = _objectWithoutProperties(_ref, ["children", "className", "showClose"]);
+
+  var _useModalContext = (0, _context["default"])(),
+      onClose = _useModalContext.onClose;
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('modal-card-head', className)
+  }), children, showClose && /*#__PURE__*/_react["default"].createElement(_button["default"], {
+    remove: true,
+    onClick: onClose
+  }));
+};
+
+ModalCardHead.defaultProps = {
+  showClose: true,
+  renderAs: 'header'
+};
+var _default = ModalCardHead;
+exports["default"] = _default;
+//# sourceMappingURL=header.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/modal/components/card/index.js":
+/*!*******************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/modal/components/card/index.js ***!
+  \*******************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _card = _interopRequireDefault(__webpack_require__(/*! ./card */ "./node_modules/react-bulma-components/cjs/components/modal/components/card/card.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var _default = _card["default"];
+exports["default"] = _default;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/modal/components/card/title.js":
+/*!*******************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/modal/components/card/title.js ***!
+  \*******************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var ModalCardTitle = function ModalCardTitle(_ref) {
+  var children = _ref.children,
+      className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["children", "className"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('modal-card-title', className)
+  }), children);
+};
+
+ModalCardTitle.defaultProps = {
+  renderAs: 'p'
+};
+var _default = ModalCardTitle;
+exports["default"] = _default;
+//# sourceMappingURL=title.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/modal/components/content.js":
+/*!****************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/modal/components/content.js ***!
+  \****************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var ModalContent = function ModalContent(_ref) {
+  var children = _ref.children,
+      className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["children", "className"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('modal-content', className)
+  }), children);
+};
+
+var _default = ModalContent;
+exports["default"] = _default;
+//# sourceMappingURL=content.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/modal/context.js":
+/*!*****************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/modal/context.js ***!
+  \*****************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+function _typeof(obj) { "@babel/helpers - typeof"; if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = exports.ModalContext = void 0;
+
+var _react = _interopRequireWildcard(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+function _getRequireWildcardCache() { if (typeof WeakMap !== "function") return null; var cache = new WeakMap(); _getRequireWildcardCache = function _getRequireWildcardCache() { return cache; }; return cache; }
+
+function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } if (obj === null || _typeof(obj) !== "object" && typeof obj !== "function") { return { "default": obj }; } var cache = _getRequireWildcardCache(); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj["default"] = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
+
+var ModalContext = /*#__PURE__*/_react["default"].createContext({
+  onClose: function onClose() {}
+});
+
+exports.ModalContext = ModalContext;
+
+var useModalContext = function useModalContext() {
+  return (0, _react.useContext)(ModalContext);
+};
+
+var _default = useModalContext;
+exports["default"] = _default;
+//# sourceMappingURL=context.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/modal/index.js":
+/*!***************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/modal/index.js ***!
+  \***************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _modal = _interopRequireDefault(__webpack_require__(/*! ./modal */ "./node_modules/react-bulma-components/cjs/components/modal/modal.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var _default = _modal["default"];
+exports["default"] = _default;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/modal/modal.js":
+/*!***************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/modal/modal.js ***!
+  \***************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+function _typeof(obj) { "@babel/helpers - typeof"; if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireWildcard(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _reactDom = _interopRequireDefault(__webpack_require__(/*! react-dom */ "./node_modules/react-dom/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _content = _interopRequireDefault(__webpack_require__(/*! ./components/content */ "./node_modules/react-bulma-components/cjs/components/modal/components/content.js"));
+
+var _card = _interopRequireDefault(__webpack_require__(/*! ./components/card */ "./node_modules/react-bulma-components/cjs/components/modal/components/card/index.js"));
+
+var _context = __webpack_require__(/*! ./context */ "./node_modules/react-bulma-components/cjs/components/modal/context.js");
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _getRequireWildcardCache() { if (typeof WeakMap !== "function") return null; var cache = new WeakMap(); _getRequireWildcardCache = function _getRequireWildcardCache() { return cache; }; return cache; }
+
+function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } if (obj === null || _typeof(obj) !== "object" && typeof obj !== "function") { return { "default": obj }; } var cache = _getRequireWildcardCache(); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj["default"] = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
+
+function _slicedToArray(arr, i) { return _arrayWithHoles(arr) || _iterableToArrayLimit(arr, i) || _unsupportedIterableToArray(arr, i) || _nonIterableRest(); }
+
+function _nonIterableRest() { throw new TypeError("Invalid attempt to destructure non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
+
+function _unsupportedIterableToArray(o, minLen) { if (!o) return; if (typeof o === "string") return _arrayLikeToArray(o, minLen); var n = Object.prototype.toString.call(o).slice(8, -1); if (n === "Object" && o.constructor) n = o.constructor.name; if (n === "Map" || n === "Set") return Array.from(o); if (n === "Arguments" || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(n)) return _arrayLikeToArray(o, minLen); }
+
+function _arrayLikeToArray(arr, len) { if (len == null || len > arr.length) len = arr.length; for (var i = 0, arr2 = new Array(len); i < len; i++) { arr2[i] = arr[i]; } return arr2; }
+
+function _iterableToArrayLimit(arr, i) { var _i = arr && (typeof Symbol !== "undefined" && arr[Symbol.iterator] || arr["@@iterator"]); if (_i == null) return; var _arr = []; var _n = true; var _d = false; var _s, _e; try { for (_i = _i.call(arr); !(_n = (_s = _i.next()).done); _n = true) { _arr.push(_s.value); if (i && _arr.length === i) break; } } catch (err) { _d = true; _e = err; } finally { try { if (!_n && _i["return"] != null) _i["return"](); } finally { if (_d) throw _e; } } return _arr; }
+
+function _arrayWithHoles(arr) { if (Array.isArray(arr)) return arr; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var KEYCODES = {
+  ESCAPE: 27
+};
+
+var Modal = function Modal(_ref) {
+  var domRef = _ref.domRef,
+      children = _ref.children,
+      className = _ref.className,
+      show = _ref.show,
+      closeOnBlur = _ref.closeOnBlur,
+      showClose = _ref.showClose,
+      onClose = _ref.onClose,
+      closeOnEsc = _ref.closeOnEsc,
+      props = _objectWithoutProperties(_ref, ["domRef", "children", "className", "show", "closeOnBlur", "showClose", "onClose", "closeOnEsc"]);
+
+  var ref = (0, _react.useRef)(domRef);
+
+  var _useState = (0, _react.useState)(),
+      _useState2 = _slicedToArray(_useState, 2),
+      portalContainer = _useState2[0],
+      setPortalContainer = _useState2[1];
+
+  (0, _react.useEffect)(function () {
+    if (!show) {
+      return undefined;
+    }
+
+    var doc = props.document || document;
+    var container = doc.createElement('div');
+    container.setAttribute('class', 'modal-container');
+    doc.body.appendChild(container);
+    setPortalContainer(container);
+
+    var handleKeydown = function handleKeydown(evt) {
+      if (evt.keyCode === KEYCODES.ESCAPE && show) {
+        onClose();
+      }
+    };
+
+    if (closeOnEsc) {
+      doc.addEventListener('keydown', handleKeydown);
+    }
+
+    return function () {
+      doc.removeEventListener('keydown', handleKeydown);
+      container.parentNode.removeChild(container);
+    };
+  }, [show]);
+
+  if (!portalContainer) {
+    return null;
+  }
+
+  return /*#__PURE__*/_reactDom["default"].createPortal( /*#__PURE__*/_react["default"].createElement(_context.ModalContext.Provider, {
+    value: {
+      onClose: onClose
+    }
+  }, /*#__PURE__*/_react["default"].createElement(_element["default"], {
+    domRef: ref,
+    className: (0, _classnames["default"])('modal', className, {
+      'is-active': show
+    })
+  }, /*#__PURE__*/_react["default"].createElement("div", {
+    role: "presentation",
+    className: "modal-background",
+    onClick: closeOnBlur ? onClose : undefined
+  }), children, showClose && /*#__PURE__*/_react["default"].createElement("button", {
+    type: "button",
+    onClick: onClose,
+    className: "modal-close is-large",
+    "aria-label": "close"
+  }))), portalContainer);
+};
+
+Modal.Content = _content["default"];
+Modal.Card = _card["default"];
+Modal.defaultProps = {
+  closeOnEsc: true,
+  showClose: true,
+  // Expose mount point for testing
+  document: undefined
+};
+var _default = Modal;
+exports["default"] = _default;
+//# sourceMappingURL=modal.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/navbar/components/brand.js":
+/*!***************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/navbar/components/brand.js ***!
+  \***************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var NavbarBrand = function NavbarBrand(_ref) {
+  var className = _ref.className,
+      children = _ref.children,
+      props = _objectWithoutProperties(_ref, ["className", "children"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('navbar-brand', className)
+  }), children);
+};
+
+NavbarBrand.defaultProps = {};
+var _default = NavbarBrand;
+exports["default"] = _default;
+//# sourceMappingURL=brand.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/navbar/components/burger.js":
+/*!****************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/navbar/components/burger.js ***!
+  \****************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _context = __webpack_require__(/*! ../context */ "./node_modules/react-bulma-components/cjs/components/navbar/context.js");
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function ownKeys(object, enumerableOnly) { var keys = Object.keys(object); if (Object.getOwnPropertySymbols) { var symbols = Object.getOwnPropertySymbols(object); if (enumerableOnly) symbols = symbols.filter(function (sym) { return Object.getOwnPropertyDescriptor(object, sym).enumerable; }); keys.push.apply(keys, symbols); } return keys; }
+
+function _objectSpread(target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i] != null ? arguments[i] : {}; if (i % 2) { ownKeys(Object(source), true).forEach(function (key) { _defineProperty(target, key, source[key]); }); } else if (Object.getOwnPropertyDescriptors) { Object.defineProperties(target, Object.getOwnPropertyDescriptors(source)); } else { ownKeys(Object(source)).forEach(function (key) { Object.defineProperty(target, key, Object.getOwnPropertyDescriptor(source, key)); }); } } return target; }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var NavbarBurger = function NavbarBurger(_ref) {
+  var style = _ref.style,
+      className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["style", "className"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_context.ShowContext.Consumer, null, function (active) {
+    return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({
+      role: "button",
+      tabIndex: "0",
+      style: _objectSpread({
+        outline: 'none'
+      }, style),
+      className: (0, _classnames["default"])('navbar-burger', className, {
+        'is-active': active
+      })
+    }, props), /*#__PURE__*/_react["default"].createElement("span", null), /*#__PURE__*/_react["default"].createElement("span", null), /*#__PURE__*/_react["default"].createElement("span", null));
+  });
+};
+
+NavbarBurger.defaultProps = {};
+var _default = NavbarBurger;
+exports["default"] = _default;
+//# sourceMappingURL=burger.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/navbar/components/container.js":
+/*!*******************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/navbar/components/container.js ***!
+  \*******************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames2 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var alignMapper = {
+  left: 'start',
+  right: 'end'
+};
+
+var NavbarContainer = function NavbarContainer(_ref) {
+  var className = _ref.className,
+      children = _ref.children,
+      align = _ref.align,
+      props = _objectWithoutProperties(_ref, ["className", "children", "align"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames2["default"])(_defineProperty({}, "navbar-".concat(alignMapper[align]), alignMapper[align]), className)
+  }), children);
+};
+
+NavbarContainer.defaultProps = {
+  align: 'left'
+};
+var _default = NavbarContainer;
+exports["default"] = _default;
+//# sourceMappingURL=container.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/navbar/components/divider.js":
+/*!*****************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/navbar/components/divider.js ***!
+  \*****************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var NavbarDivider = function NavbarDivider(_ref) {
+  var className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["className"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('navbar-divider', className)
+  }));
+};
+
+NavbarDivider.defaultProps = {
+  renderAs: 'hr'
+};
+var _default = NavbarDivider;
+exports["default"] = _default;
+//# sourceMappingURL=divider.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/navbar/components/dropdown.js":
+/*!******************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/navbar/components/dropdown.js ***!
+  \******************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var NavbarDropdown = function NavbarDropdown(_ref) {
+  var className = _ref.className,
+      boxed = _ref.boxed,
+      right = _ref.right,
+      children = _ref.children,
+      props = _objectWithoutProperties(_ref, ["className", "boxed", "right", "children"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('navbar-dropdown', className, {
+      'is-boxed': boxed,
+      'is-right': right
+    })
+  }), children);
+};
+
+NavbarDropdown.defaultProps = {
+  renderAs: 'span'
+};
+var _default = NavbarDropdown;
+exports["default"] = _default;
+//# sourceMappingURL=dropdown.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/navbar/components/item.js":
+/*!**************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/navbar/components/item.js ***!
+  \**************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _dropdown = _interopRequireDefault(__webpack_require__(/*! ./dropdown */ "./node_modules/react-bulma-components/cjs/components/navbar/components/dropdown.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var NavbarItem = function NavbarItem(_ref) {
+  var _dropdown$props;
+
+  var className = _ref.className,
+      active = _ref.active,
+      children = _ref.children,
+      hoverable = _ref.hoverable,
+      renderAs = _ref.renderAs,
+      arrowless = _ref.arrowless,
+      props = _objectWithoutProperties(_ref, ["className", "active", "children", "hoverable", "renderAs", "arrowless"]);
+
+  var as = renderAs;
+
+  var dropdown = _react["default"].Children.toArray(children).find(function (child) {
+    return child.type === _dropdown["default"];
+  });
+
+  if (dropdown && renderAs === 'a') {
+    as = 'span';
+  }
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    renderAs: as,
+    className: (0, _classnames["default"])('navbar-item', className, {
+      'is-active': active,
+      'has-dropdown': dropdown,
+      'is-hoverable': hoverable,
+      'has-dropdown-up': dropdown && ((_dropdown$props = dropdown.props) === null || _dropdown$props === void 0 ? void 0 : _dropdown$props.up),
+      'is-arrowless': arrowless
+    })
+  }), children);
+};
+
+NavbarItem.defaultProps = {
+  renderAs: 'a'
+};
+var _default = NavbarItem;
+exports["default"] = _default;
+//# sourceMappingURL=item.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/navbar/components/link.js":
+/*!**************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/navbar/components/link.js ***!
+  \**************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var NavbarLink = function NavbarLink(_ref) {
+  var className = _ref.className,
+      children = _ref.children,
+      arrowless = _ref.arrowless,
+      props = _objectWithoutProperties(_ref, ["className", "children", "arrowless"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('navbar-link', className, {
+      'is-arrowless': arrowless
+    })
+  }), children);
+};
+
+NavbarLink.defaultProps = {
+  renderAs: 'span'
+};
+var _default = NavbarLink;
+exports["default"] = _default;
+//# sourceMappingURL=link.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/navbar/components/menu.js":
+/*!**************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/navbar/components/menu.js ***!
+  \**************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _context = __webpack_require__(/*! ../context */ "./node_modules/react-bulma-components/cjs/components/navbar/context.js");
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var NavbarMenu = function NavbarMenu(_ref) {
+  var className = _ref.className,
+      children = _ref.children,
+      props = _objectWithoutProperties(_ref, ["className", "children"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_context.ShowContext.Consumer, null, function (active) {
+    return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+      className: (0, _classnames["default"])('navbar-menu', className, {
+        'is-active': active
+      })
+    }), children);
+  });
+};
+
+NavbarMenu.defaultProps = {};
+var _default = NavbarMenu;
+exports["default"] = _default;
+//# sourceMappingURL=menu.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/navbar/context.js":
+/*!******************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/navbar/context.js ***!
+  \******************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.ShowContext = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var ShowContext = /*#__PURE__*/_react["default"].createContext(false);
+
+exports.ShowContext = ShowContext;
+//# sourceMappingURL=context.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/navbar/index.js":
+/*!****************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/navbar/index.js ***!
+  \****************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _navbar = _interopRequireDefault(__webpack_require__(/*! ./navbar */ "./node_modules/react-bulma-components/cjs/components/navbar/navbar.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var _default = _navbar["default"];
+exports["default"] = _default;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/navbar/navbar.js":
+/*!*****************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/navbar/navbar.js ***!
+  \*****************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+function _typeof(obj) { "@babel/helpers - typeof"; if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireWildcard(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames2 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _brand = _interopRequireDefault(__webpack_require__(/*! ./components/brand */ "./node_modules/react-bulma-components/cjs/components/navbar/components/brand.js"));
+
+var _burger = _interopRequireDefault(__webpack_require__(/*! ./components/burger */ "./node_modules/react-bulma-components/cjs/components/navbar/components/burger.js"));
+
+var _menu = _interopRequireDefault(__webpack_require__(/*! ./components/menu */ "./node_modules/react-bulma-components/cjs/components/navbar/components/menu.js"));
+
+var _item = _interopRequireDefault(__webpack_require__(/*! ./components/item */ "./node_modules/react-bulma-components/cjs/components/navbar/components/item.js"));
+
+var _dropdown = _interopRequireDefault(__webpack_require__(/*! ./components/dropdown */ "./node_modules/react-bulma-components/cjs/components/navbar/components/dropdown.js"));
+
+var _divider = _interopRequireDefault(__webpack_require__(/*! ./components/divider */ "./node_modules/react-bulma-components/cjs/components/navbar/components/divider.js"));
+
+var _link = _interopRequireDefault(__webpack_require__(/*! ./components/link */ "./node_modules/react-bulma-components/cjs/components/navbar/components/link.js"));
+
+var _container = _interopRequireDefault(__webpack_require__(/*! ./components/container */ "./node_modules/react-bulma-components/cjs/components/navbar/components/container.js"));
+
+var _context = __webpack_require__(/*! ./context */ "./node_modules/react-bulma-components/cjs/components/navbar/context.js");
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _getRequireWildcardCache() { if (typeof WeakMap !== "function") return null; var cache = new WeakMap(); _getRequireWildcardCache = function _getRequireWildcardCache() { return cache; }; return cache; }
+
+function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } if (obj === null || _typeof(obj) !== "object" && typeof obj !== "function") { return { "default": obj }; } var cache = _getRequireWildcardCache(); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj["default"] = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Navbar = function Navbar(_ref) {
+  var _classnames;
+
+  var children = _ref.children,
+      className = _ref.className,
+      fixed = _ref.fixed,
+      transparent = _ref.transparent,
+      color = _ref.color,
+      active = _ref.active,
+      size = _ref.size,
+      props = _objectWithoutProperties(_ref, ["children", "className", "fixed", "transparent", "color", "active", "size"]);
+
+  (0, _react.useEffect)(function () {
+    var html = window.document.querySelector('html');
+
+    if (!html.classList.contains("has-navbar-fixed-".concat(fixed))) {
+      html.classList.remove('has-navbar-fixed-top');
+      html.classList.remove('has-navbar-fixed-bottom');
+    }
+
+    if (fixed) {
+      html.classList.add("has-navbar-fixed-".concat(fixed));
+    }
+
+    return function () {
+      return window.document.querySelector('html').classList.remove("has-navbar-fixed-".concat(fixed));
+    };
+  }, [fixed]);
+  return /*#__PURE__*/_react["default"].createElement(_context.ShowContext.Provider, {
+    value: active
+  }, /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    role: "navigation",
+    className: (0, _classnames2["default"])('navbar', className, (_classnames = {
+      'is-transparent': transparent
+    }, _defineProperty(_classnames, "is-fixed-".concat(fixed), fixed), _defineProperty(_classnames, "is-".concat(color), color), _defineProperty(_classnames, "is-spaced", size === 'large'), _classnames))
+  }), children));
+};
+
+Navbar.defaultProps = {
+  renderAs: 'nav'
+};
+Navbar.Brand = _brand["default"];
+Navbar.Burger = _burger["default"];
+Navbar.Menu = _menu["default"];
+Navbar.Item = _item["default"];
+Navbar.Dropdown = _dropdown["default"];
+Navbar.Link = _link["default"];
+Navbar.Divider = _divider["default"];
+Navbar.Container = _container["default"];
+var _default = Navbar;
+exports["default"] = _default;
+//# sourceMappingURL=navbar.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/notification/index.js":
+/*!**********************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/notification/index.js ***!
+  \**********************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _notification = _interopRequireDefault(__webpack_require__(/*! ./notification */ "./node_modules/react-bulma-components/cjs/components/notification/notification.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var _default = _notification["default"];
+exports["default"] = _default;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/notification/notification.js":
+/*!*****************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/notification/notification.js ***!
+  \*****************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames2 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Notification = function Notification(_ref) {
+  var _classnames;
+
+  var className = _ref.className,
+      color = _ref.color,
+      light = _ref.light,
+      props = _objectWithoutProperties(_ref, ["className", "color", "light"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames2["default"])('notification', (_classnames = {}, _defineProperty(_classnames, "is-".concat(color), color), _defineProperty(_classnames, 'is-light', light), _classnames), className)
+  }));
+};
+
+var _default = Notification;
+exports["default"] = _default;
+//# sourceMappingURL=notification.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/pagination/index.js":
+/*!********************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/pagination/index.js ***!
+  \********************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _pagination = _interopRequireDefault(__webpack_require__(/*! ./pagination */ "./node_modules/react-bulma-components/cjs/components/pagination/pagination.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var _default = _pagination["default"];
+exports["default"] = _default;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/pagination/pagination.js":
+/*!*************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/pagination/pagination.js ***!
+  \*************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames2 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _normalizer = __webpack_require__(/*! ../../services/normalizer */ "./node_modules/react-bulma-components/cjs/services/normalizer.js");
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var getFirstPage = function getFirstPage(current, last, delta) {
+  if (current === 1) {
+    return 1;
+  }
+
+  var minPage = last - delta * 2;
+  var page = Math.min(current - delta, minPage);
+  return page <= 0 ? 1 : page;
+};
+
+var getLastPage = function getLastPage(current, total, delta) {
+  if (current === total) {
+    return total;
+  }
+
+  var maxPage = delta * 2 + 1;
+  var page = Math.max(current + delta, maxPage);
+  return page > total ? total : page;
+};
+
+var Pagination = function Pagination(_ref) {
+  var _classnames;
+
+  var current = _ref.current,
+      disabled = _ref.disabled,
+      total = _ref.total,
+      next = _ref.next,
+      previous = _ref.previous,
+      showPrevNext = _ref.showPrevNext,
+      showFirstLast = _ref.showFirstLast,
+      delta = _ref.delta,
+      autoHide = _ref.autoHide,
+      className = _ref.className,
+      size = _ref.size,
+      align = _ref.align,
+      rounded = _ref.rounded,
+      onChange = _ref.onChange,
+      props = _objectWithoutProperties(_ref, ["current", "disabled", "total", "next", "previous", "showPrevNext", "showFirstLast", "delta", "autoHide", "className", "size", "align", "rounded", "onChange"]);
+
+  if (total <= 1 && autoHide || current > total) {
+    return null;
+  }
+
+  var lastPage = getLastPage(current, total, delta);
+  var firstPage = getFirstPage(current, lastPage, delta);
+  var prevDisabled = current === 1 || disabled;
+  var nextDisabled = current === total || disabled;
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames2["default"])('pagination', className, (_classnames = {}, _defineProperty(_classnames, "is-".concat(size), size), _defineProperty(_classnames, "is-".concat((0, _normalizer.normalizeAlign)(align)), align), _defineProperty(_classnames, 'is-rounded', rounded), _classnames)),
+    "aria-label": "pagination"
+  }), showPrevNext && /*#__PURE__*/_react["default"].createElement(_react["default"].Fragment, null, /*#__PURE__*/_react["default"].createElement("a", {
+    role: "button",
+    tabIndex: 0,
+    onClick: prevDisabled ? undefined : function () {
+      return onChange(current - 1);
+    },
+    className: "pagination-previous",
+    title: "This is the first page",
+    disabled: prevDisabled
+  }, previous), /*#__PURE__*/_react["default"].createElement("a", {
+    role: "button",
+    tabIndex: 0,
+    onClick: nextDisabled ? undefined : function () {
+      return onChange(current + 1);
+    },
+    className: "pagination-next",
+    disabled: nextDisabled
+  }, next)), delta > 0 && /*#__PURE__*/_react["default"].createElement(_react["default"].Fragment, null, /*#__PURE__*/_react["default"].createElement("ul", {
+    className: "pagination-list"
+  }, showFirstLast && current !== 1 && firstPage !== 1 && /*#__PURE__*/_react["default"].createElement(_react["default"].Fragment, null, /*#__PURE__*/_react["default"].createElement("li", {
+    key: 1
+  }, /*#__PURE__*/_react["default"].createElement("a", {
+    role: "button",
+    tabIndex: 0,
+    className: "pagination-link",
+    onClick: function onClick() {
+      return onChange(1);
+    },
+    "aria-label": "Page 1",
+    "aria-current": "page",
+    disabled: disabled
+  }, "1")), /*#__PURE__*/_react["default"].createElement("li", null, /*#__PURE__*/_react["default"].createElement("span", {
+    className: "pagination-ellipsis"
+  }, "\u2026"))), Array(lastPage - firstPage + 1).fill(0).map(function (_, i) {
+    return (
+      /*#__PURE__*/
+      // eslint-disable-next-line react/no-array-index-key
+      _react["default"].createElement("li", {
+        key: i + firstPage
+      }, /*#__PURE__*/_react["default"].createElement("a", {
+        role: "button",
+        tabIndex: 0,
+        className: (0, _classnames2["default"])('pagination-link', {
+          'is-current': current === i + firstPage
+        }),
+        onClick: current === firstPage + i ? undefined : function () {
+          return onChange(firstPage + i);
+        },
+        "aria-label": "Page ".concat(i + firstPage),
+        "aria-current": "page",
+        disabled: disabled
+      }, i + firstPage))
+    );
+  }), showFirstLast && current !== lastPage && total !== lastPage && /*#__PURE__*/_react["default"].createElement(_react["default"].Fragment, null, /*#__PURE__*/_react["default"].createElement("li", {
+    key: total
+  }, /*#__PURE__*/_react["default"].createElement("span", {
+    className: "pagination-ellipsis"
+  }, "\u2026")), /*#__PURE__*/_react["default"].createElement("li", null, /*#__PURE__*/_react["default"].createElement("a", {
+    role: "button",
+    tabIndex: 0,
+    className: "pagination-link",
+    onClick: function onClick() {
+      return onChange(total);
+    },
+    "aria-label": "Page ".concat(total),
+    "aria-current": "page",
+    disabled: disabled
+  }, total))))));
+};
+
+Pagination.defaultProps = {
+  total: 1,
+  current: 1,
+  delta: 1,
+  next: 'Next',
+  previous: 'Previous',
+  renderAs: 'nav',
+  showPrevNext: true,
+  autoHide: true
+};
+var _default = Pagination;
+exports["default"] = _default;
+//# sourceMappingURL=pagination.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/panel/components/block.js":
+/*!**************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/panel/components/block.js ***!
+  \**************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var PanelBlock = function PanelBlock(_ref) {
+  var className = _ref.className,
+      active = _ref.active,
+      props = _objectWithoutProperties(_ref, ["className", "active"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('panel-block', className, {
+      'is-active': active
+    })
+  }));
+};
+
+var _default = PanelBlock;
+exports["default"] = _default;
+//# sourceMappingURL=block.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/panel/components/header.js":
+/*!***************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/panel/components/header.js ***!
+  \***************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var PanelHeader = function PanelHeader(_ref) {
+  var className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["className"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('panel-heading', className)
+  }));
+};
+
+var _default = PanelHeader;
+exports["default"] = _default;
+//# sourceMappingURL=header.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/panel/components/icon.js":
+/*!*************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/panel/components/icon.js ***!
+  \*************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var PanelIcon = function PanelIcon(_ref) {
+  var className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["className"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('panel-icon', className)
+  }));
+};
+
+PanelIcon.defaultProps = {
+  renderAs: 'span'
+};
+var _default = PanelIcon;
+exports["default"] = _default;
+//# sourceMappingURL=icon.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/panel/components/tabs/components/tab.js":
+/*!****************************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/panel/components/tabs/components/tab.js ***!
+  \****************************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var PanelTabsTab = function PanelTabsTab(_ref) {
+  var className = _ref.className,
+      active = _ref.active,
+      props = _objectWithoutProperties(_ref, ["className", "active"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])(className, {
+      'is-active': active
+    })
+  }));
+};
+
+PanelTabsTab.defaultProps = {
+  renderAs: 'a'
+};
+var _default = PanelTabsTab;
+exports["default"] = _default;
+//# sourceMappingURL=tab.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/panel/components/tabs/index.js":
+/*!*******************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/panel/components/tabs/index.js ***!
+  \*******************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+Object.defineProperty(exports, "default", {
+  enumerable: true,
+  get: function get() {
+    return _tabs["default"];
+  }
+});
+
+var _tabs = _interopRequireDefault(__webpack_require__(/*! ./tabs */ "./node_modules/react-bulma-components/cjs/components/panel/components/tabs/tabs.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/panel/components/tabs/tabs.js":
+/*!******************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/panel/components/tabs/tabs.js ***!
+  \******************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _tab = _interopRequireDefault(__webpack_require__(/*! ./components/tab */ "./node_modules/react-bulma-components/cjs/components/panel/components/tabs/components/tab.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var PanelTabs = function PanelTabs(_ref) {
+  var className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["className"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('panel-tabs', className)
+  }));
+};
+
+PanelTabs.Tab = _tab["default"];
+var _default = PanelTabs;
+exports["default"] = _default;
+//# sourceMappingURL=tabs.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/panel/index.js":
+/*!***************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/panel/index.js ***!
+  \***************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _panel = _interopRequireDefault(__webpack_require__(/*! ./panel */ "./node_modules/react-bulma-components/cjs/components/panel/panel.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var _default = _panel["default"];
+exports["default"] = _default;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/panel/panel.js":
+/*!***************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/panel/panel.js ***!
+  \***************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames2 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _block = _interopRequireDefault(__webpack_require__(/*! ./components/block */ "./node_modules/react-bulma-components/cjs/components/panel/components/block.js"));
+
+var _header = _interopRequireDefault(__webpack_require__(/*! ./components/header */ "./node_modules/react-bulma-components/cjs/components/panel/components/header.js"));
+
+var _icon = _interopRequireDefault(__webpack_require__(/*! ./components/icon */ "./node_modules/react-bulma-components/cjs/components/panel/components/icon.js"));
+
+var _tabs = _interopRequireDefault(__webpack_require__(/*! ./components/tabs */ "./node_modules/react-bulma-components/cjs/components/panel/components/tabs/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Panel = function Panel(_ref) {
+  var color = _ref.color,
+      className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["color", "className"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames2["default"])('panel', className, _defineProperty({}, "is-".concat(color), color))
+  }));
+};
+
+Panel.Header = _header["default"];
+Panel.Tabs = _tabs["default"];
+Panel.Block = _block["default"];
+Panel.Icon = _icon["default"];
+Panel.defaultProps = {
+  renderAs: 'nav'
+};
+var _default = Panel;
+exports["default"] = _default;
+//# sourceMappingURL=panel.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/progress/index.js":
+/*!******************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/progress/index.js ***!
+  \******************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _progress = _interopRequireDefault(__webpack_require__(/*! ./progress */ "./node_modules/react-bulma-components/cjs/components/progress/progress.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var _default = _progress["default"];
+exports["default"] = _default;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/progress/progress.js":
+/*!*********************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/progress/progress.js ***!
+  \*********************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames2 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Progress = function Progress(_ref) {
+  var _classnames;
+
+  var className = _ref.className,
+      value = _ref.value,
+      max = _ref.max,
+      color = _ref.color,
+      size = _ref.size,
+      props = _objectWithoutProperties(_ref, ["className", "value", "max", "color", "size"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    value: value,
+    max: max,
+    className: (0, _classnames2["default"])('progress', className, (_classnames = {}, _defineProperty(_classnames, "is-".concat(color), color), _defineProperty(_classnames, "is-".concat(size), size), _classnames))
+  }));
+};
+
+Progress.defaultProps = {
+  renderAs: 'progress'
+};
+var _default = Progress;
+exports["default"] = _default;
+//# sourceMappingURL=progress.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/section/index.js":
+/*!*****************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/section/index.js ***!
+  \*****************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _section = _interopRequireDefault(__webpack_require__(/*! ./section */ "./node_modules/react-bulma-components/cjs/components/section/section.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var _default = _section["default"];
+exports["default"] = _default;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/section/section.js":
+/*!*******************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/section/section.js ***!
+  \*******************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames2 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Section = function Section(_ref) {
+  var children = _ref.children,
+      className = _ref.className,
+      size = _ref.size,
+      props = _objectWithoutProperties(_ref, ["children", "className", "size"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames2["default"])('section', className, _defineProperty({}, "is-".concat(size), size))
+  }), children);
+};
+
+Section.defaultProps = {
+  renderAs: 'section'
+};
+var _default = Section;
+exports["default"] = _default;
+//# sourceMappingURL=section.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/table/components/container.js":
+/*!******************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/table/components/container.js ***!
+  \******************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var TableContainer = function TableContainer(_ref) {
+  var className = _ref.className,
+      props = _objectWithoutProperties(_ref, ["className"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('table-container', className)
+  }));
+};
+
+TableContainer.defaultProps = {};
+var _default = TableContainer;
+exports["default"] = _default;
+//# sourceMappingURL=container.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/table/index.js":
+/*!***************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/table/index.js ***!
+  \***************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _table = _interopRequireDefault(__webpack_require__(/*! ./table */ "./node_modules/react-bulma-components/cjs/components/table/table.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var _default = _table["default"];
+exports["default"] = _default;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/table/table.js":
+/*!***************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/table/table.js ***!
+  \***************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames2 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+var _container = _interopRequireDefault(__webpack_require__(/*! ./components/container */ "./node_modules/react-bulma-components/cjs/components/table/components/container.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Table = function Table(_ref) {
+  var _classnames;
+
+  var children = _ref.children,
+      className = _ref.className,
+      size = _ref.size,
+      striped = _ref.striped,
+      bordered = _ref.bordered,
+      hoverable = _ref.hoverable,
+      props = _objectWithoutProperties(_ref, ["children", "className", "size", "striped", "bordered", "hoverable"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    renderAs: "table",
+    className: (0, _classnames2["default"])('table', className, (_classnames = {}, _defineProperty(_classnames, "is-".concat(size), size), _defineProperty(_classnames, 'is-bordered', bordered), _defineProperty(_classnames, 'is-striped', striped), _defineProperty(_classnames, 'is-hoverable', hoverable), _classnames))
+  }), children);
+};
+
+Table.defaultProps = {};
+Table.Container = _container["default"];
+var _default = Table;
+exports["default"] = _default;
+//# sourceMappingURL=table.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/tabs/components/tab.js":
+/*!***********************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/tabs/components/tab.js ***!
+  \***********************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Tab = function Tab(_ref) {
+  var children = _ref.children,
+      className = _ref.className,
+      style = _ref.style,
+      active = _ref.active,
+      domRef = _ref.domRef,
+      props = _objectWithoutProperties(_ref, ["children", "className", "style", "active", "domRef"]);
+
+  return /*#__PURE__*/_react["default"].createElement("li", {
+    ref: domRef,
+    style: style,
+    className: (0, _classnames["default"])(className, {
+      'is-active': active
+    })
+  }, /*#__PURE__*/_react["default"].createElement(_element["default"], props, children));
+};
+
+Tab.defaultProps = {
+  renderAs: 'a'
+};
+var _default = Tab;
+exports["default"] = _default;
+//# sourceMappingURL=tab.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/tabs/index.js":
+/*!**************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/tabs/index.js ***!
+  \**************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _tabs = _interopRequireDefault(__webpack_require__(/*! ./tabs */ "./node_modules/react-bulma-components/cjs/components/tabs/tabs.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var _default = _tabs["default"];
+exports["default"] = _default;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/tabs/tabs.js":
+/*!*************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/tabs/tabs.js ***!
+  \*************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames2 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _tab = _interopRequireDefault(__webpack_require__(/*! ./components/tab */ "./node_modules/react-bulma-components/cjs/components/tabs/components/tab.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+var _normalizer = __webpack_require__(/*! ../../services/normalizer */ "./node_modules/react-bulma-components/cjs/services/normalizer.js");
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Tabs = function Tabs(_ref) {
+  var _classnames;
+
+  var children = _ref.children,
+      className = _ref.className,
+      align = _ref.align,
+      size = _ref.size,
+      type = _ref.type,
+      fullwidth = _ref.fullwidth,
+      props = _objectWithoutProperties(_ref, ["children", "className", "align", "size", "type", "fullwidth"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames2["default"])('tabs', className, (_classnames = {}, _defineProperty(_classnames, "is-".concat((0, _normalizer.normalizeAlign)(align)), align), _defineProperty(_classnames, "is-".concat(size), size), _defineProperty(_classnames, 'is-toggle', type === 'toggle-rounded'), _defineProperty(_classnames, "is-".concat(type), type), _defineProperty(_classnames, 'is-fullwidth', fullwidth), _classnames))
+  }), /*#__PURE__*/_react["default"].createElement("ul", null, children));
+};
+
+Tabs.Tab = _tab["default"];
+var _default = Tabs;
+exports["default"] = _default;
+//# sourceMappingURL=tabs.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/tag/components/tag-group.js":
+/*!****************************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/tag/components/tag-group.js ***!
+  \****************************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var TagGroup = function TagGroup(_ref) {
+  var children = _ref.children,
+      className = _ref.className,
+      gapless = _ref.gapless,
+      hasAddons = _ref.hasAddons,
+      props = _objectWithoutProperties(_ref, ["children", "className", "gapless", "hasAddons"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames["default"])('tags', className, {
+      'has-addons': gapless || hasAddons
+    })
+  }), children);
+};
+
+TagGroup.defaultProps = {
+  renderAs: 'span'
+};
+var _default = TagGroup;
+exports["default"] = _default;
+//# sourceMappingURL=tag-group.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/tag/index.js":
+/*!*************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/tag/index.js ***!
+  \*************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _tag = _interopRequireDefault(__webpack_require__(/*! ./tag */ "./node_modules/react-bulma-components/cjs/components/tag/tag.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var _default = _tag["default"];
+exports["default"] = _default;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/tag/tag.js":
+/*!***********************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/tag/tag.js ***!
+  \***********************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames2 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _tagGroup = _interopRequireDefault(__webpack_require__(/*! ./components/tag-group */ "./node_modules/react-bulma-components/cjs/components/tag/components/tag-group.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Tag = function Tag(_ref) {
+  var _classnames;
+
+  var children = _ref.children,
+      className = _ref.className,
+      color = _ref.color,
+      size = _ref.size,
+      rounded = _ref.rounded,
+      remove = _ref.remove,
+      props = _objectWithoutProperties(_ref, ["children", "className", "color", "size", "rounded", "remove"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames2["default"])('tag', className, (_classnames = {}, _defineProperty(_classnames, "is-".concat(size), size), _defineProperty(_classnames, "is-".concat(color), color), _defineProperty(_classnames, 'is-rounded', rounded), _defineProperty(_classnames, 'is-delete', remove), _classnames))
+  }), !remove && children);
+};
+
+Tag.Group = _tagGroup["default"];
+Tag.defaultProps = {
+  renderAs: 'span'
+};
+var _default = Tag;
+exports["default"] = _default;
+//# sourceMappingURL=tag.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/tile/index.js":
+/*!**************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/tile/index.js ***!
+  \**************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _tile = _interopRequireDefault(__webpack_require__(/*! ./tile */ "./node_modules/react-bulma-components/cjs/components/tile/tile.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+var _default = _tile["default"];
+exports["default"] = _default;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/components/tile/tile.js":
+/*!*************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/components/tile/tile.js ***!
+  \*************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports["default"] = void 0;
+
+var _react = _interopRequireDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var _propTypes = _interopRequireDefault(__webpack_require__(/*! prop-types */ "./node_modules/prop-types/index.js"));
+
+var _classnames2 = _interopRequireDefault(__webpack_require__(/*! classnames */ "./node_modules/classnames/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ../element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _objectWithoutProperties(source, excluded) { if (source == null) return {}; var target = _objectWithoutPropertiesLoose(source, excluded); var key, i; if (Object.getOwnPropertySymbols) { var sourceSymbolKeys = Object.getOwnPropertySymbols(source); for (i = 0; i < sourceSymbolKeys.length; i++) { key = sourceSymbolKeys[i]; if (excluded.indexOf(key) >= 0) continue; if (!Object.prototype.propertyIsEnumerable.call(source, key)) continue; target[key] = source[key]; } } return target; }
+
+function _objectWithoutPropertiesLoose(source, excluded) { if (source == null) return {}; var target = {}; var sourceKeys = Object.keys(source); var key, i; for (i = 0; i < sourceKeys.length; i++) { key = sourceKeys[i]; if (excluded.indexOf(key) >= 0) continue; target[key] = source[key]; } return target; }
+
+var Tile = function Tile(_ref) {
+  var _classnames;
+
+  var children = _ref.children,
+      className = _ref.className,
+      kind = _ref.kind,
+      vertical = _ref.vertical,
+      size = _ref.size,
+      color = _ref.color,
+      props = _objectWithoutProperties(_ref, ["children", "className", "kind", "vertical", "size", "color"]);
+
+  return /*#__PURE__*/_react["default"].createElement(_element["default"], _extends({}, props, {
+    className: (0, _classnames2["default"])('tile', className, (_classnames = {}, _defineProperty(_classnames, "is-".concat(kind), kind), _defineProperty(_classnames, "is-".concat(size), size), _defineProperty(_classnames, "is-".concat(color), color), _defineProperty(_classnames, 'is-vertical', vertical), _classnames))
+  }), children);
+};
+
+var _default = Tile;
+exports["default"] = _default;
+//# sourceMappingURL=tile.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/index.js":
+/*!**********************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/index.js ***!
+  \**********************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+function _typeof(obj) { "@babel/helpers - typeof"; if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+Object.defineProperty(exports, "Box", {
+  enumerable: true,
+  get: function get() {
+    return _box["default"];
+  }
+});
+Object.defineProperty(exports, "Block", {
+  enumerable: true,
+  get: function get() {
+    return _block["default"];
+  }
+});
+Object.defineProperty(exports, "Button", {
+  enumerable: true,
+  get: function get() {
+    return _button["default"];
+  }
+});
+Object.defineProperty(exports, "Breadcrumb", {
+  enumerable: true,
+  get: function get() {
+    return _breadcrumb["default"];
+  }
+});
+Object.defineProperty(exports, "Card", {
+  enumerable: true,
+  get: function get() {
+    return _card["default"];
+  }
+});
+Object.defineProperty(exports, "Columns", {
+  enumerable: true,
+  get: function get() {
+    return _columns["default"];
+  }
+});
+Object.defineProperty(exports, "Container", {
+  enumerable: true,
+  get: function get() {
+    return _container["default"];
+  }
+});
+Object.defineProperty(exports, "Content", {
+  enumerable: true,
+  get: function get() {
+    return _content["default"];
+  }
+});
+Object.defineProperty(exports, "Footer", {
+  enumerable: true,
+  get: function get() {
+    return _footer["default"];
+  }
+});
+Object.defineProperty(exports, "Heading", {
+  enumerable: true,
+  get: function get() {
+    return _heading["default"];
+  }
+});
+Object.defineProperty(exports, "Hero", {
+  enumerable: true,
+  get: function get() {
+    return _hero["default"];
+  }
+});
+Object.defineProperty(exports, "Image", {
+  enumerable: true,
+  get: function get() {
+    return _image["default"];
+  }
+});
+Object.defineProperty(exports, "Level", {
+  enumerable: true,
+  get: function get() {
+    return _level["default"];
+  }
+});
+Object.defineProperty(exports, "Media", {
+  enumerable: true,
+  get: function get() {
+    return _media["default"];
+  }
+});
+Object.defineProperty(exports, "Notification", {
+  enumerable: true,
+  get: function get() {
+    return _notification["default"];
+  }
+});
+Object.defineProperty(exports, "Progress", {
+  enumerable: true,
+  get: function get() {
+    return _progress["default"];
+  }
+});
+Object.defineProperty(exports, "Section", {
+  enumerable: true,
+  get: function get() {
+    return _section["default"];
+  }
+});
+Object.defineProperty(exports, "Tabs", {
+  enumerable: true,
+  get: function get() {
+    return _tabs["default"];
+  }
+});
+Object.defineProperty(exports, "Table", {
+  enumerable: true,
+  get: function get() {
+    return _table["default"];
+  }
+});
+Object.defineProperty(exports, "Tag", {
+  enumerable: true,
+  get: function get() {
+    return _tag["default"];
+  }
+});
+Object.defineProperty(exports, "Tile", {
+  enumerable: true,
+  get: function get() {
+    return _tile["default"];
+  }
+});
+Object.defineProperty(exports, "Modal", {
+  enumerable: true,
+  get: function get() {
+    return _modal["default"];
+  }
+});
+Object.defineProperty(exports, "Dropdown", {
+  enumerable: true,
+  get: function get() {
+    return _dropdown["default"];
+  }
+});
+Object.defineProperty(exports, "Icon", {
+  enumerable: true,
+  get: function get() {
+    return _icon["default"];
+  }
+});
+Object.defineProperty(exports, "Loader", {
+  enumerable: true,
+  get: function get() {
+    return _loader["default"];
+  }
+});
+Object.defineProperty(exports, "Navbar", {
+  enumerable: true,
+  get: function get() {
+    return _navbar["default"];
+  }
+});
+Object.defineProperty(exports, "Pagination", {
+  enumerable: true,
+  get: function get() {
+    return _pagination["default"];
+  }
+});
+Object.defineProperty(exports, "Menu", {
+  enumerable: true,
+  get: function get() {
+    return _menu["default"];
+  }
+});
+Object.defineProperty(exports, "Message", {
+  enumerable: true,
+  get: function get() {
+    return _message["default"];
+  }
+});
+Object.defineProperty(exports, "Panel", {
+  enumerable: true,
+  get: function get() {
+    return _panel["default"];
+  }
+});
+Object.defineProperty(exports, "Element", {
+  enumerable: true,
+  get: function get() {
+    return _element["default"];
+  }
+});
+exports.Form = void 0;
+
+var Form = _interopRequireWildcard(__webpack_require__(/*! ./components/form */ "./node_modules/react-bulma-components/cjs/components/form/index.js"));
+
+exports.Form = Form;
+
+var _box = _interopRequireDefault(__webpack_require__(/*! ./components/box */ "./node_modules/react-bulma-components/cjs/components/box/index.js"));
+
+var _block = _interopRequireDefault(__webpack_require__(/*! ./components/block */ "./node_modules/react-bulma-components/cjs/components/block/index.js"));
+
+var _button = _interopRequireDefault(__webpack_require__(/*! ./components/button */ "./node_modules/react-bulma-components/cjs/components/button/index.js"));
+
+var _breadcrumb = _interopRequireDefault(__webpack_require__(/*! ./components/breadcrumb */ "./node_modules/react-bulma-components/cjs/components/breadcrumb/index.js"));
+
+var _card = _interopRequireDefault(__webpack_require__(/*! ./components/card */ "./node_modules/react-bulma-components/cjs/components/card/index.js"));
+
+var _columns = _interopRequireDefault(__webpack_require__(/*! ./components/columns */ "./node_modules/react-bulma-components/cjs/components/columns/index.js"));
+
+var _container = _interopRequireDefault(__webpack_require__(/*! ./components/container */ "./node_modules/react-bulma-components/cjs/components/container/index.js"));
+
+var _content = _interopRequireDefault(__webpack_require__(/*! ./components/content */ "./node_modules/react-bulma-components/cjs/components/content/index.js"));
+
+var _footer = _interopRequireDefault(__webpack_require__(/*! ./components/footer */ "./node_modules/react-bulma-components/cjs/components/footer/index.js"));
+
+var _heading = _interopRequireDefault(__webpack_require__(/*! ./components/heading */ "./node_modules/react-bulma-components/cjs/components/heading/index.js"));
+
+var _hero = _interopRequireDefault(__webpack_require__(/*! ./components/hero */ "./node_modules/react-bulma-components/cjs/components/hero/index.js"));
+
+var _image = _interopRequireDefault(__webpack_require__(/*! ./components/image */ "./node_modules/react-bulma-components/cjs/components/image/index.js"));
+
+var _level = _interopRequireDefault(__webpack_require__(/*! ./components/level */ "./node_modules/react-bulma-components/cjs/components/level/index.js"));
+
+var _media = _interopRequireDefault(__webpack_require__(/*! ./components/media */ "./node_modules/react-bulma-components/cjs/components/media/index.js"));
+
+var _notification = _interopRequireDefault(__webpack_require__(/*! ./components/notification */ "./node_modules/react-bulma-components/cjs/components/notification/index.js"));
+
+var _progress = _interopRequireDefault(__webpack_require__(/*! ./components/progress */ "./node_modules/react-bulma-components/cjs/components/progress/index.js"));
+
+var _section = _interopRequireDefault(__webpack_require__(/*! ./components/section */ "./node_modules/react-bulma-components/cjs/components/section/index.js"));
+
+var _tabs = _interopRequireDefault(__webpack_require__(/*! ./components/tabs */ "./node_modules/react-bulma-components/cjs/components/tabs/index.js"));
+
+var _table = _interopRequireDefault(__webpack_require__(/*! ./components/table */ "./node_modules/react-bulma-components/cjs/components/table/index.js"));
+
+var _tag = _interopRequireDefault(__webpack_require__(/*! ./components/tag */ "./node_modules/react-bulma-components/cjs/components/tag/index.js"));
+
+var _tile = _interopRequireDefault(__webpack_require__(/*! ./components/tile */ "./node_modules/react-bulma-components/cjs/components/tile/index.js"));
+
+var _modal = _interopRequireDefault(__webpack_require__(/*! ./components/modal */ "./node_modules/react-bulma-components/cjs/components/modal/index.js"));
+
+var _dropdown = _interopRequireDefault(__webpack_require__(/*! ./components/dropdown */ "./node_modules/react-bulma-components/cjs/components/dropdown/index.js"));
+
+var _icon = _interopRequireDefault(__webpack_require__(/*! ./components/icon */ "./node_modules/react-bulma-components/cjs/components/icon/index.js"));
+
+var _loader = _interopRequireDefault(__webpack_require__(/*! ./components/loader */ "./node_modules/react-bulma-components/cjs/components/loader/index.js"));
+
+var _navbar = _interopRequireDefault(__webpack_require__(/*! ./components/navbar */ "./node_modules/react-bulma-components/cjs/components/navbar/index.js"));
+
+var _pagination = _interopRequireDefault(__webpack_require__(/*! ./components/pagination */ "./node_modules/react-bulma-components/cjs/components/pagination/index.js"));
+
+var _menu = _interopRequireDefault(__webpack_require__(/*! ./components/menu */ "./node_modules/react-bulma-components/cjs/components/menu/index.js"));
+
+var _message = _interopRequireDefault(__webpack_require__(/*! ./components/message */ "./node_modules/react-bulma-components/cjs/components/message/index.js"));
+
+var _panel = _interopRequireDefault(__webpack_require__(/*! ./components/panel */ "./node_modules/react-bulma-components/cjs/components/panel/index.js"));
+
+var _element = _interopRequireDefault(__webpack_require__(/*! ./components/element */ "./node_modules/react-bulma-components/cjs/components/element/index.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+
+function _getRequireWildcardCache() { if (typeof WeakMap !== "function") return null; var cache = new WeakMap(); _getRequireWildcardCache = function _getRequireWildcardCache() { return cache; }; return cache; }
+
+function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } if (obj === null || _typeof(obj) !== "object" && typeof obj !== "function") { return { "default": obj }; } var cache = _getRequireWildcardCache(); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj["default"] = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ "./node_modules/react-bulma-components/cjs/services/normalizer.js":
+/*!************************************************************************!*\
+  !*** ./node_modules/react-bulma-components/cjs/services/normalizer.js ***!
+  \************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.normalizeStatus = exports.normalizeAlign = void 0;
+
+var normalizeAlign = function normalizeAlign(align) {
+  var map = {
+    justify: 'justifyed',
+    center: 'centered'
+  };
+  return map[align] || align;
+};
+
+exports.normalizeAlign = normalizeAlign;
+
+var normalizeStatus = function normalizeStatus(status) {
+  var map = {
+    focus: 'focused',
+    hover: 'hovered',
+    active: 'active'
+  };
+  return map[status] || status;
+};
+
+exports.normalizeStatus = normalizeStatus;
+//# sourceMappingURL=normalizer.js.map
 
 /***/ }),
 
@@ -38118,7 +47206,11 @@ var __WEBPACK_AMD_DEFINE_RESULT__;!(__WEBPACK_AMD_DEFINE_RESULT__ = (function (r
 
 "use strict";
 __webpack_require__.r(__webpack_exports__);
-/* harmony import */ var react_router_dom__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! react-router-dom */ "./node_modules/react-router-dom/esm/react-router-dom.js");
+/* harmony import */ var _components_html_container__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./components/html/container */ "./src/main/resources/static/components/html/container.js");
+/* harmony import */ var _components_domain_structure__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./components/domain/structure */ "./src/main/resources/static/components/domain/structure.js");
+/* harmony import */ var react_bulma_components__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! react-bulma-components */ "./node_modules/react-bulma-components/cjs/index.js");
+/* harmony import */ var react_bulma_components__WEBPACK_IMPORTED_MODULE_2___default = /*#__PURE__*/__webpack_require__.n(react_bulma_components__WEBPACK_IMPORTED_MODULE_2__);
+/* harmony import */ var react_router_dom__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! react-router-dom */ "./node_modules/react-router-dom/esm/react-router-dom.js");
 function _typeof(obj) { "@babel/helpers - typeof"; if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
 
 function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
@@ -38149,52 +47241,24 @@ var ReactDOM = __webpack_require__(/*! react-dom */ "./node_modules/react-dom/in
 
 var client = __webpack_require__(/*! ./client */ "./src/main/resources/static/client.js");
 
+var axios = __webpack_require__(/*! axios */ "./node_modules/axios/index.js")["default"];
 
 
-var Directory = /*#__PURE__*/function (_React$Component) {
-  _inherits(Directory, _React$Component);
 
-  var _super = _createSuper(Directory);
 
-  function Directory() {
-    _classCallCheck(this, Directory);
 
-    return _super.apply(this, arguments);
-  }
 
-  _createClass(Directory, [{
-    key: "render",
-    value: function render() {
-      return /*#__PURE__*/React.createElement(react_router_dom__WEBPACK_IMPORTED_MODULE_0__["BrowserRouter"], null, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("nav", null, /*#__PURE__*/React.createElement("ul", null, /*#__PURE__*/React.createElement("li", null, /*#__PURE__*/React.createElement(react_router_dom__WEBPACK_IMPORTED_MODULE_0__["Link"], {
-        to: "/"
-      }, "Index")), /*#__PURE__*/React.createElement("li", null, /*#__PURE__*/React.createElement(react_router_dom__WEBPACK_IMPORTED_MODULE_0__["Link"], {
-        to: "/home"
-      }, "Home")), /*#__PURE__*/React.createElement("li", null, /*#__PURE__*/React.createElement(react_router_dom__WEBPACK_IMPORTED_MODULE_0__["Link"], {
-        to: "/customers"
-      }, "Customers")))), /*#__PURE__*/React.createElement(react_router_dom__WEBPACK_IMPORTED_MODULE_0__["Switch"], null, /*#__PURE__*/React.createElement(react_router_dom__WEBPACK_IMPORTED_MODULE_0__["Route"], {
-        path: "/home"
-      }, /*#__PURE__*/React.createElement(Index, null)), /*#__PURE__*/React.createElement(react_router_dom__WEBPACK_IMPORTED_MODULE_0__["Route"], {
-        path: "/customers"
-      }, /*#__PURE__*/React.createElement(Customers, null)), /*#__PURE__*/React.createElement(react_router_dom__WEBPACK_IMPORTED_MODULE_0__["Route"], {
-        path: "/index"
-      }, /*#__PURE__*/React.createElement(Index, null)))));
-    }
-  }]);
+var App = /*#__PURE__*/function (_React$Component) {
+  _inherits(App, _React$Component);
 
-  return Directory;
-}(React.Component);
-
-var App = /*#__PURE__*/function (_React$Component2) {
-  _inherits(App, _React$Component2);
-
-  var _super2 = _createSuper(App);
+  var _super = _createSuper(App);
 
   function App(props) {
     var _this;
 
     _classCallCheck(this, App);
 
-    _this = _super2.call(this, props);
+    _this = _super.call(this, props);
     _this.state = {
       ulist: [],
       users: [],
@@ -38233,19 +47297,130 @@ var App = /*#__PURE__*/function (_React$Component2) {
   }, {
     key: "render",
     value: function render() {
-      return /*#__PURE__*/React.createElement("table", {
-        className: "table is-bordered is-narrow is-hoverable"
-      }, /*#__PURE__*/React.createElement("tbody", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "ID"), /*#__PURE__*/React.createElement("th", null, "Leader"), /*#__PURE__*/React.createElement("th", null, "User Type"), /*#__PURE__*/React.createElement("th", null, "Email"), /*#__PURE__*/React.createElement("th", null, "Details")), this.renderRow()));
+      return /*#__PURE__*/React.createElement("div", {
+        className: "columns"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "column is-3 "
+      }, /*#__PURE__*/React.createElement("aside", {
+        className: "menu is-hidden-mobile"
+      }, /*#__PURE__*/React.createElement("p", {
+        className: "menu-label"
+      }, "General"), /*#__PURE__*/React.createElement("ul", {
+        className: "menu-list"
+      }, /*#__PURE__*/React.createElement(react_router_dom__WEBPACK_IMPORTED_MODULE_3__["Link"], {
+        to: "/home"
+      }, "Dashboard"), /*#__PURE__*/React.createElement(react_router_dom__WEBPACK_IMPORTED_MODULE_3__["Link"], {
+        to: "/users"
+      }, "Users")), /*#__PURE__*/React.createElement("p", {
+        className: "menu-label"
+      }, "Product Overview"), /*#__PURE__*/React.createElement("ul", {
+        className: "menu-list"
+      }, /*#__PURE__*/React.createElement("li", null, "Manage sectors", /*#__PURE__*/React.createElement("ul", null, /*#__PURE__*/React.createElement("li", null, /*#__PURE__*/React.createElement(react_router_dom__WEBPACK_IMPORTED_MODULE_3__["Link"], {
+        to: "/business"
+      }, "Business Development")), /*#__PURE__*/React.createElement("li", null, /*#__PURE__*/React.createElement(react_router_dom__WEBPACK_IMPORTED_MODULE_3__["Link"], {
+        to: "/marketing"
+      }, "Marketing")), /*#__PURE__*/React.createElement("li", null, /*#__PURE__*/React.createElement(react_router_dom__WEBPACK_IMPORTED_MODULE_3__["Link"], {
+        to: "/sales"
+      }, "Sales"))))))), /*#__PURE__*/React.createElement("div", {
+        className: "column is-9"
+      }, /*#__PURE__*/React.createElement("nav", {
+        className: "breadcrumb",
+        "aria-label": "breadcrumbs"
+      }, /*#__PURE__*/React.createElement("ul", null, /*#__PURE__*/React.createElement("li", null, /*#__PURE__*/React.createElement("a", {
+        href: "/"
+      }, "_____________")))), /*#__PURE__*/React.createElement(react_router_dom__WEBPACK_IMPORTED_MODULE_3__["Switch"], null, /*#__PURE__*/React.createElement(react_router_dom__WEBPACK_IMPORTED_MODULE_3__["Route"], {
+        path: "/users:control"
+      }), /*#__PURE__*/React.createElement(react_router_dom__WEBPACK_IMPORTED_MODULE_3__["Route"], {
+        path: "/users"
+      }, /*#__PURE__*/React.createElement(UserControls, {
+        users: this.state.users
+      })), /*#__PURE__*/React.createElement(react_router_dom__WEBPACK_IMPORTED_MODULE_3__["Route"], {
+        path: "/business"
+      }, /*#__PURE__*/React.createElement(Table, {
+        key: "business",
+        url: "/api/users/search/findByUserType?type=Business%20Development"
+      })), /*#__PURE__*/React.createElement(react_router_dom__WEBPACK_IMPORTED_MODULE_3__["Route"], {
+        path: "/marketing"
+      }, /*#__PURE__*/React.createElement(Table, {
+        key: "marketing",
+        url: "/api/users/search/findByUserType?type=Marketing"
+      })), /*#__PURE__*/React.createElement(react_router_dom__WEBPACK_IMPORTED_MODULE_3__["Route"], {
+        path: "/sales"
+      }, /*#__PURE__*/React.createElement(Table, {
+        key: "sales",
+        url: "/api/users/search/findByUserType?type=Sales"
+      })), /*#__PURE__*/React.createElement(react_router_dom__WEBPACK_IMPORTED_MODULE_3__["Route"], {
+        path: "/"
+      }, /*#__PURE__*/React.createElement(_components_html_container__WEBPACK_IMPORTED_MODULE_0__["Overview"], null)))));
+    }
+  }]);
+
+  return App;
+}(React.Component);
+
+var Table = /*#__PURE__*/function (_React$Component2) {
+  _inherits(Table, _React$Component2);
+
+  var _super2 = _createSuper(Table);
+
+  function Table(props) {
+    var _this3;
+
+    _classCallCheck(this, Table);
+
+    _this3 = _super2.call(this, props);
+    _this3.state = {
+      body: [],
+      rows: []
+    };
+    return _this3;
+  }
+
+  _createClass(Table, [{
+    key: "componentDidMount",
+    value: function componentDidMount() {
+      var _this4 = this;
+
+      client({
+        method: 'GET',
+        path: this.props.url
+      }).done(function (response) {
+        _this4.setState({
+          body: response.entity._embedded.users
+        });
+
+        var user;
+
+        var usersList = _this4.state.body.map(function (users) {
+          return user = {
+            key: users._links.self.href,
+            values: users
+          };
+        });
+
+        _this4.setState({
+          rows: usersList
+        });
+      });
+    }
+  }, {
+    key: "render",
+    value: function render() {
+      return /*#__PURE__*/React.createElement("div", {
+        className: "table-container"
+      }, /*#__PURE__*/React.createElement("table", {
+        className: "table is-bordered is-narrow is-hoverable is-striped"
+      }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "ID"), /*#__PURE__*/React.createElement("th", null, "Leader"), /*#__PURE__*/React.createElement("th", null, "User Type"), /*#__PURE__*/React.createElement("th", null, "Email"), /*#__PURE__*/React.createElement("th", null, "Details"))), /*#__PURE__*/React.createElement("tbody", null, this.renderRow())));
     }
   }, {
     key: "renderRow",
     value: function renderRow() {
       var person, data, key;
-      var row = this.state.users.map(function (user, index) {
+      var row = this.state.rows.map(function (user, index) {
         try {
           data = user["values"];
           key = user["key"];
-          person = new User(key, data.reportsTo, data.userType, data.email, data.details);
+          person = new _components_domain_structure__WEBPACK_IMPORTED_MODULE_1__["User"](key, data.reportsTo, data.userType, data.email, data.details);
           person.print();
         } catch (e) {
           console.log(e);
@@ -38258,178 +47433,272 @@ var App = /*#__PURE__*/function (_React$Component2) {
     }
   }]);
 
-  return App;
+  return Table;
 }(React.Component);
 
-var Overview = /*#__PURE__*/function (_React$Component3) {
-  _inherits(Overview, _React$Component3);
+var UserControls = /*#__PURE__*/function (_React$Component3) {
+  _inherits(UserControls, _React$Component3);
 
-  var _super3 = _createSuper(Overview);
+  var _super3 = _createSuper(UserControls);
 
-  function Overview() {
-    _classCallCheck(this, Overview);
+  function UserControls(props) {
+    _classCallCheck(this, UserControls);
 
-    return _super3.apply(this, arguments);
+    return _super3.call(this, props);
   }
 
-  _createClass(Overview, [{
+  _createClass(UserControls, [{
     key: "render",
     value: function render() {
-      return /*#__PURE__*/React.createElement("section", {
-        className: "hero is-info welcome is-small"
-      }, /*#__PURE__*/React.createElement("div", {
-        className: "hero-body"
-      }, /*#__PURE__*/React.createElement("div", {
-        className: "container"
-      }, /*#__PURE__*/React.createElement("h1", {
-        className: "title"
-      }, "Overview"), /*#__PURE__*/React.createElement("h2", {
-        className: "subtitle"
-      }, "Glance of internal statistics"))));
+      return /*#__PURE__*/React.createElement("section", null, /*#__PURE__*/React.createElement(react_router_dom__WEBPACK_IMPORTED_MODULE_3__["BrowserRouter"], null, /*#__PURE__*/React.createElement("div", {
+        className: "field has-addons"
+      }, /*#__PURE__*/React.createElement("p", {
+        className: "control"
+      }, /*#__PURE__*/React.createElement(react_bulma_components__WEBPACK_IMPORTED_MODULE_2__["Button"], {
+        className: "button",
+        to: "/user/create",
+        renderAs: react_router_dom__WEBPACK_IMPORTED_MODULE_3__["Link"]
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "icon is-small"
+      }, /*#__PURE__*/React.createElement("i", {
+        className: "fa fa-plus-square"
+      })), /*#__PURE__*/React.createElement("span", null, "Create"))), /*#__PURE__*/React.createElement("p", {
+        className: "control"
+      }, /*#__PURE__*/React.createElement(react_bulma_components__WEBPACK_IMPORTED_MODULE_2__["Button"], {
+        className: "button",
+        to: "/user/update",
+        renderAs: react_router_dom__WEBPACK_IMPORTED_MODULE_3__["Link"]
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "icon is-small"
+      }, /*#__PURE__*/React.createElement("i", {
+        className: "fa fa-pencil-square-o"
+      })), /*#__PURE__*/React.createElement("span", null, "Update"))), /*#__PURE__*/React.createElement("p", {
+        className: "control"
+      }, /*#__PURE__*/React.createElement(react_bulma_components__WEBPACK_IMPORTED_MODULE_2__["Button"], {
+        className: "button",
+        to: "/user/delete",
+        renderAs: react_router_dom__WEBPACK_IMPORTED_MODULE_3__["Link"]
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "icon is-small"
+      }, /*#__PURE__*/React.createElement("i", {
+        className: "fa fa-trash"
+      })), /*#__PURE__*/React.createElement("span", null, "Delete"))), /*#__PURE__*/React.createElement("p", {
+        className: "control"
+      }, /*#__PURE__*/React.createElement(react_bulma_components__WEBPACK_IMPORTED_MODULE_2__["Button"], {
+        className: "button",
+        to: "/user/appoint",
+        renderAs: react_router_dom__WEBPACK_IMPORTED_MODULE_3__["Link"]
+      }, /*#__PURE__*/React.createElement("span", {
+        className: "icon is-small"
+      }, /*#__PURE__*/React.createElement("i", {
+        className: "fa fa-level-up"
+      })), /*#__PURE__*/React.createElement("span", null, "Appoint")))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(react_router_dom__WEBPACK_IMPORTED_MODULE_3__["Switch"], null, /*#__PURE__*/React.createElement(react_router_dom__WEBPACK_IMPORTED_MODULE_3__["Route"], {
+        path: "/user/create"
+      }, /*#__PURE__*/React.createElement(UserEntry, {
+        buttonClass: "Submit"
+      })), /*#__PURE__*/React.createElement(react_router_dom__WEBPACK_IMPORTED_MODULE_3__["Route"], {
+        path: "/user/update"
+      }, /*#__PURE__*/React.createElement(_components_html_container__WEBPACK_IMPORTED_MODULE_0__["UpdateEntry"], {
+        buttonClass: "Submit"
+      })), /*#__PURE__*/React.createElement(react_router_dom__WEBPACK_IMPORTED_MODULE_3__["Route"], {
+        path: "/user/delete"
+      }, /*#__PURE__*/React.createElement(_components_html_container__WEBPACK_IMPORTED_MODULE_0__["IDFields"], {
+        appoint: false
+      })), /*#__PURE__*/React.createElement(react_router_dom__WEBPACK_IMPORTED_MODULE_3__["Route"], {
+        path: "/user/appoint"
+      }, /*#__PURE__*/React.createElement(_components_html_container__WEBPACK_IMPORTED_MODULE_0__["IDFields"], {
+        appoint: true
+      }))))));
     }
   }]);
 
-  return Overview;
+  return UserControls;
 }(React.Component);
 
-var Tiles = /*#__PURE__*/function (_React$Component4) {
-  _inherits(Tiles, _React$Component4);
+var UserEntry = /*#__PURE__*/function (_React$Component4) {
+  _inherits(UserEntry, _React$Component4);
 
-  var _super4 = _createSuper(Tiles);
+  var _super4 = _createSuper(UserEntry);
 
-  function Tiles() {
-    _classCallCheck(this, Tiles);
+  function UserEntry(props) {
+    var _this5;
 
-    return _super4.apply(this, arguments);
-  }
+    _classCallCheck(this, UserEntry);
 
-  _createClass(Tiles, [{
-    key: "render",
-    value: function render() {
-      return /*#__PURE__*/React.createElement("section", {
-        className: "info-tiles"
-      }, /*#__PURE__*/React.createElement("div", {
-        className: "tile is-ancestor has-text-centered"
-      }, /*#__PURE__*/React.createElement("div", {
-        className: "tile is-parent"
-      }, /*#__PURE__*/React.createElement("article", {
-        className: "tile is-child box"
-      }, /*#__PURE__*/React.createElement("p", {
-        className: "title"
-      }, "100"), /*#__PURE__*/React.createElement("p", {
-        className: "subtitle"
-      }, "Users"))), /*#__PURE__*/React.createElement("div", {
-        className: "tile is-parent"
-      }, /*#__PURE__*/React.createElement("article", {
-        className: "tile is-child box"
-      }, /*#__PURE__*/React.createElement("p", {
-        className: "title"
-      }, "100"), /*#__PURE__*/React.createElement("p", {
-        className: "subtitle"
-      }, "Products"))), /*#__PURE__*/React.createElement("div", {
-        className: "tile is-parent"
-      }, /*#__PURE__*/React.createElement("article", {
-        className: "tile is-child box"
-      }, /*#__PURE__*/React.createElement("p", {
-        className: "title"
-      }, "100"), /*#__PURE__*/React.createElement("p", {
-        className: "subtitle"
-      }, "Unpaid Orders"))), /*#__PURE__*/React.createElement("div", {
-        className: "tile is-parent"
-      }, /*#__PURE__*/React.createElement("article", {
-        className: "tile is-child box"
-      }, /*#__PURE__*/React.createElement("p", {
-        className: "title"
-      }, "100"), /*#__PURE__*/React.createElement("p", {
-        className: "subtitle"
-      }, "Exceptions")))));
-    }
-  }]);
-
-  return Tiles;
-}(React.Component);
-
-var Index = /*#__PURE__*/function (_React$Component5) {
-  _inherits(Index, _React$Component5);
-
-  var _super5 = _createSuper(Index);
-
-  function Index() {
-    _classCallCheck(this, Index);
-
-    return _super5.apply(this, arguments);
-  }
-
-  _createClass(Index, [{
-    key: "render",
-    value: function render() {
-      return /*#__PURE__*/React.createElement("h2", null, "Index");
-    }
-  }]);
-
-  return Index;
-}(React.Component);
-
-var Customers = /*#__PURE__*/function (_React$Component6) {
-  _inherits(Customers, _React$Component6);
-
-  var _super6 = _createSuper(Customers);
-
-  function Customers() {
-    _classCallCheck(this, Customers);
-
-    return _super6.apply(this, arguments);
-  }
-
-  _createClass(Customers, [{
-    key: "render",
-    value: function render() {
-      return /*#__PURE__*/React.createElement("h2", null, "Customers");
-    }
-  }]);
-
-  return Customers;
-}(React.Component);
-
-var Index2 = /*#__PURE__*/function (_React$Component7) {
-  _inherits(Index2, _React$Component7);
-
-  var _super7 = _createSuper(Index2);
-
-  function Index2(props) {
-    var _this3;
-
-    _classCallCheck(this, Index2);
-
-    _this3 = _super7.call(this, props);
-
-    _defineProperty(_assertThisInitialized(_this3), "handleClick", function (page) {
-      _this3.setState({
-        currentView: page
-      });
-    });
-
-    _this3.state = {
-      currentView: "index"
+    _this5 = _super4.call(this, props);
+    _this5.state = {
+      name: '',
+      email: '',
+      department: 'Business Development',
+      balance: ''
     };
-    return _this3;
+    _this5.handleChange = _this5.handleChange.bind(_assertThisInitialized(_this5));
+    return _this5;
   }
 
-  _createClass(Index2, [{
+  _createClass(UserEntry, [{
+    key: "handleChange",
+    value: function handleChange(event) {
+      var target = event.target;
+      var value = target.value;
+      var ref = target.name;
+      this.setState(_defineProperty({}, ref, value));
+    }
+  }, {
     key: "render",
     value: function render() {
-      var _this4 = this;
-
-      return /*#__PURE__*/React.createElement("div", null, "Index ", /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("button", {
-        onClick: function onClick() {
-          return _this4.handleClick("home");
-        }
-      }, "Go to HOME"));
+      return /*#__PURE__*/React.createElement("section", null, /*#__PURE__*/React.createElement("div", {
+        className: "field is-horizontal is-narrow"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "field-label is-small"
+      }, /*#__PURE__*/React.createElement("label", {
+        className: "label"
+      }, "Information")), /*#__PURE__*/React.createElement("div", {
+        className: "field-body"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "field"
+      }, /*#__PURE__*/React.createElement("p", {
+        className: "control is-expanded has-icons-left"
+      }, /*#__PURE__*/React.createElement("input", {
+        name: "name",
+        className: "input",
+        type: "text",
+        placeholder: "Name",
+        onChange: this.handleChange,
+        value: this.state.name
+      }), /*#__PURE__*/React.createElement("span", {
+        className: "icon is-small is-left"
+      }, /*#__PURE__*/React.createElement("i", {
+        className: "fa fa-user"
+      })))), /*#__PURE__*/React.createElement("div", {
+        className: "field"
+      }, /*#__PURE__*/React.createElement("p", {
+        className: "control is-expanded has-icons-left has-icons-right"
+      }, /*#__PURE__*/React.createElement("input", {
+        name: "email",
+        className: "input is-success",
+        type: "email",
+        placeholder: "Email",
+        onChange: this.handleChange,
+        value: this.state.email
+      }), /*#__PURE__*/React.createElement("span", {
+        className: "icon is-small is-left"
+      }, /*#__PURE__*/React.createElement("i", {
+        className: "fa fa-envelope"
+      })))))), /*#__PURE__*/React.createElement("div", {
+        className: "field is-horizontal is-narrow"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "field-label is-small"
+      }, /*#__PURE__*/React.createElement("label", {
+        className: "label"
+      }, "Department")), /*#__PURE__*/React.createElement("div", {
+        className: "field-body"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "field"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "control"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "select is-fullwidth"
+      }, /*#__PURE__*/React.createElement("select", {
+        name: "department",
+        value: this.state.department,
+        onChange: this.handleChange
+      }, /*#__PURE__*/React.createElement("option", {
+        value: "Business Development"
+      }, "Business Development"), /*#__PURE__*/React.createElement("option", {
+        value: "Marketing"
+      }, "Marketing"), /*#__PURE__*/React.createElement("option", {
+        value: "Sales"
+      }, "Sales"))))), /*#__PURE__*/React.createElement("div", {
+        className: "field"
+      }, /*#__PURE__*/React.createElement("p", {
+        className: "control is-expanded has-icons-left"
+      }, /*#__PURE__*/React.createElement("input", {
+        name: "balance",
+        className: "input",
+        type: "text",
+        placeholder: "Balance",
+        value: this.state.balance,
+        onChange: this.handleChange
+      }), /*#__PURE__*/React.createElement("span", {
+        className: "icon is-small is-left"
+      }, /*#__PURE__*/React.createElement("i", {
+        className: "fa fa-money"
+      })))))), /*#__PURE__*/React.createElement("div", {
+        className: "field is-horizontal"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "field-body"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "field"
+      }, /*#__PURE__*/React.createElement(_components_html_container__WEBPACK_IMPORTED_MODULE_0__["PostButton"], {
+        userEntry: this.state,
+        formID: "userEntry",
+        buttonText: this.props.buttonClass
+      })))));
     }
   }]);
 
-  return Index2;
+  return UserEntry;
 }(React.Component);
+
+ReactDOM.render( /*#__PURE__*/React.createElement(react_router_dom__WEBPACK_IMPORTED_MODULE_3__["BrowserRouter"], null, /*#__PURE__*/React.createElement(App, null)), document.getElementById("app"));
+
+/***/ }),
+
+/***/ "./src/main/resources/static/client.js":
+/*!*********************************************!*\
+  !*** ./src/main/resources/static/client.js ***!
+  \*********************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+var rest = __webpack_require__(/*! rest */ "./node_modules/rest/browser.js");
+
+var defaultRequest = __webpack_require__(/*! rest/interceptor/defaultRequest */ "./node_modules/rest/interceptor/defaultRequest.js");
+
+var mime = __webpack_require__(/*! rest/interceptor/mime */ "./node_modules/rest/interceptor/mime.js");
+
+var uriTemplateInterceptor = __webpack_require__(/*! ./api/uriTemplateInterceptor */ "./src/main/resources/static/api/uriTemplateInterceptor.js");
+
+var errorCode = __webpack_require__(/*! rest/interceptor/errorCode */ "./node_modules/rest/interceptor/errorCode.js");
+
+var baseRegistry = __webpack_require__(/*! rest/mime/registry */ "./node_modules/rest/mime/registry.js");
+
+var registry = baseRegistry.child();
+registry.register('text/uri-list', __webpack_require__(/*! ./api/uriListConverter */ "./src/main/resources/static/api/uriListConverter.js"));
+registry.register('application/hal+json', __webpack_require__(/*! rest/mime/type/application/hal */ "./node_modules/rest/mime/type/application/hal.js"));
+module.exports = rest.wrap(mime, {
+  registry: registry
+}).wrap(uriTemplateInterceptor).wrap(errorCode).wrap(defaultRequest, {
+  headers: {
+    'Accept': 'application/hal+json'
+  }
+});
+
+/***/ }),
+
+/***/ "./src/main/resources/static/components/domain/structure.js":
+/*!******************************************************************!*\
+  !*** ./src/main/resources/static/components/domain/structure.js ***!
+  \******************************************************************/
+/*! exports provided: User */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "User", function() { return User; });
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+function _defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } }
+
+function _createClass(Constructor, protoProps, staticProps) { if (protoProps) _defineProperties(Constructor.prototype, protoProps); if (staticProps) _defineProperties(Constructor, staticProps); return Constructor; }
+
+var React = __webpack_require__(/*! react */ "./node_modules/react/index.js");
+
+var ReactDOM = __webpack_require__(/*! react-dom */ "./node_modules/react-dom/index.js");
 
 var User = /*#__PURE__*/function () {
   function User(id, reportsTo, userType, email, details) {
@@ -38480,20 +47749,78 @@ var User = /*#__PURE__*/function () {
   return User;
 }();
 
-ReactDOM.render( /*#__PURE__*/React.createElement(Overview, null), document.getElementById('overview'));
-ReactDOM.render( /*#__PURE__*/React.createElement(Tiles, null), document.getElementById('tiles')); // ReactDOM.render(
-//         <Directory/>,
-//     document.getElementById('directory')
-// )
+/***/ }),
 
-ReactDOM.render( /*#__PURE__*/React.createElement(App, null), document.getElementById('app'));
+/***/ "./src/main/resources/static/components/html/api/uriListConverter.js":
+/*!***************************************************************************!*\
+  !*** ./src/main/resources/static/components/html/api/uriListConverter.js ***!
+  \***************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+var __WEBPACK_AMD_DEFINE_RESULT__;!(__WEBPACK_AMD_DEFINE_RESULT__ = (function () {
+  'use strict';
+  /* Convert a single or array of resources into "URI1\nURI2\nURI3..." */
+
+  return {
+    read: function read(str
+    /*, opts */
+    ) {
+      return str.split('\n');
+    },
+    write: function write(obj
+    /*, opts */
+    ) {
+      // If this is an Array, extract the self URI and then join using a newline
+      if (obj instanceof Array) {
+        return obj.map(function (resource) {
+          return resource._links.self.href;
+        }).join('\n');
+      } else {
+        // otherwise, just return the self URI
+        return obj._links.self.href;
+      }
+    }
+  };
+}).call(exports, __webpack_require__, exports, module),
+				__WEBPACK_AMD_DEFINE_RESULT__ !== undefined && (module.exports = __WEBPACK_AMD_DEFINE_RESULT__));
 
 /***/ }),
 
-/***/ "./src/main/resources/static/client.js":
-/*!*********************************************!*\
-  !*** ./src/main/resources/static/client.js ***!
-  \*********************************************/
+/***/ "./src/main/resources/static/components/html/api/uriTemplateInterceptor.js":
+/*!*********************************************************************************!*\
+  !*** ./src/main/resources/static/components/html/api/uriTemplateInterceptor.js ***!
+  \*********************************************************************************/
+/*! no static exports found */
+/***/ (function(module, exports, __webpack_require__) {
+
+var __WEBPACK_AMD_DEFINE_RESULT__;!(__WEBPACK_AMD_DEFINE_RESULT__ = (function (require) {
+  'use strict';
+
+  var interceptor = __webpack_require__(/*! rest/interceptor */ "./node_modules/rest/interceptor.js");
+
+  return interceptor({
+    request: function request(_request
+    /*, config, meta */
+    ) {
+      /* If the URI is a URI Template per RFC 6570 (https://tools.ietf.org/html/rfc6570), trim out the template part */
+      if (_request.path.indexOf('{') === -1) {
+        return _request;
+      } else {
+        _request.path = _request.path.split('{')[0];
+        return _request;
+      }
+    }
+  });
+}).call(exports, __webpack_require__, exports, module),
+				__WEBPACK_AMD_DEFINE_RESULT__ !== undefined && (module.exports = __WEBPACK_AMD_DEFINE_RESULT__));
+
+/***/ }),
+
+/***/ "./src/main/resources/static/components/html/client.js":
+/*!*************************************************************!*\
+  !*** ./src/main/resources/static/components/html/client.js ***!
+  \*************************************************************/
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -38506,14 +47833,14 @@ var defaultRequest = __webpack_require__(/*! rest/interceptor/defaultRequest */ 
 
 var mime = __webpack_require__(/*! rest/interceptor/mime */ "./node_modules/rest/interceptor/mime.js");
 
-var uriTemplateInterceptor = __webpack_require__(/*! ./api/uriTemplateInterceptor */ "./src/main/resources/static/api/uriTemplateInterceptor.js");
+var uriTemplateInterceptor = __webpack_require__(/*! ./api/uriTemplateInterceptor */ "./src/main/resources/static/components/html/api/uriTemplateInterceptor.js");
 
 var errorCode = __webpack_require__(/*! rest/interceptor/errorCode */ "./node_modules/rest/interceptor/errorCode.js");
 
 var baseRegistry = __webpack_require__(/*! rest/mime/registry */ "./node_modules/rest/mime/registry.js");
 
 var registry = baseRegistry.child();
-registry.register('text/uri-list', __webpack_require__(/*! ./api/uriListConverter */ "./src/main/resources/static/api/uriListConverter.js"));
+registry.register('text/uri-list', __webpack_require__(/*! ./api/uriListConverter */ "./src/main/resources/static/components/html/api/uriListConverter.js"));
 registry.register('application/hal+json', __webpack_require__(/*! rest/mime/type/application/hal */ "./node_modules/rest/mime/type/application/hal.js"));
 module.exports = rest.wrap(mime, {
   registry: registry
@@ -38522,6 +47849,755 @@ module.exports = rest.wrap(mime, {
     'Accept': 'application/hal+json'
   }
 });
+
+/***/ }),
+
+/***/ "./src/main/resources/static/components/html/container.js":
+/*!****************************************************************!*\
+  !*** ./src/main/resources/static/components/html/container.js ***!
+  \****************************************************************/
+/*! exports provided: Test, Banner, Tiles, Overview, SideBar, GenericButton, PostButton, DeleteButton, AppointButton, UpdateButton, IDFields, UpdateEntry */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "Test", function() { return Test; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "Banner", function() { return Banner; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "Tiles", function() { return Tiles; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "Overview", function() { return Overview; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "SideBar", function() { return SideBar; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "GenericButton", function() { return GenericButton; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "PostButton", function() { return PostButton; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "DeleteButton", function() { return DeleteButton; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "AppointButton", function() { return AppointButton; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "UpdateButton", function() { return UpdateButton; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "IDFields", function() { return IDFields; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "UpdateEntry", function() { return UpdateEntry; });
+/* harmony import */ var react_bulma_components__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! react-bulma-components */ "./node_modules/react-bulma-components/cjs/index.js");
+/* harmony import */ var react_bulma_components__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react_bulma_components__WEBPACK_IMPORTED_MODULE_0__);
+/* harmony import */ var axios__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! axios */ "./node_modules/axios/index.js");
+/* harmony import */ var axios__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__webpack_require__.n(axios__WEBPACK_IMPORTED_MODULE_1__);
+/* harmony import */ var _client__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./client */ "./src/main/resources/static/components/html/client.js");
+/* harmony import */ var _client__WEBPACK_IMPORTED_MODULE_2___default = /*#__PURE__*/__webpack_require__.n(_client__WEBPACK_IMPORTED_MODULE_2__);
+function _typeof(obj) { "@babel/helpers - typeof"; if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
+
+function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+function _defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } }
+
+function _createClass(Constructor, protoProps, staticProps) { if (protoProps) _defineProperties(Constructor.prototype, protoProps); if (staticProps) _defineProperties(Constructor, staticProps); return Constructor; }
+
+function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function"); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, writable: true, configurable: true } }); if (superClass) _setPrototypeOf(subClass, superClass); }
+
+function _setPrototypeOf(o, p) { _setPrototypeOf = Object.setPrototypeOf || function _setPrototypeOf(o, p) { o.__proto__ = p; return o; }; return _setPrototypeOf(o, p); }
+
+function _createSuper(Derived) { var hasNativeReflectConstruct = _isNativeReflectConstruct(); return function _createSuperInternal() { var Super = _getPrototypeOf(Derived), result; if (hasNativeReflectConstruct) { var NewTarget = _getPrototypeOf(this).constructor; result = Reflect.construct(Super, arguments, NewTarget); } else { result = Super.apply(this, arguments); } return _possibleConstructorReturn(this, result); }; }
+
+function _possibleConstructorReturn(self, call) { if (call && (_typeof(call) === "object" || typeof call === "function")) { return call; } else if (call !== void 0) { throw new TypeError("Derived constructors may only return object or undefined"); } return _assertThisInitialized(self); }
+
+function _assertThisInitialized(self) { if (self === void 0) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return self; }
+
+function _isNativeReflectConstruct() { if (typeof Reflect === "undefined" || !Reflect.construct) return false; if (Reflect.construct.sham) return false; if (typeof Proxy === "function") return true; try { Boolean.prototype.valueOf.call(Reflect.construct(Boolean, [], function () {})); return true; } catch (e) { return false; } }
+
+function _getPrototypeOf(o) { _getPrototypeOf = Object.setPrototypeOf ? Object.getPrototypeOf : function _getPrototypeOf(o) { return o.__proto__ || Object.getPrototypeOf(o); }; return _getPrototypeOf(o); }
+
+
+
+
+
+var React = __webpack_require__(/*! react */ "./node_modules/react/index.js");
+
+var ReactDOM = __webpack_require__(/*! react-dom */ "./node_modules/react-dom/index.js");
+
+var Test = /*#__PURE__*/function (_React$Component) {
+  _inherits(Test, _React$Component);
+
+  var _super = _createSuper(Test);
+
+  function Test(props) {
+    _classCallCheck(this, Test);
+
+    return _super.call(this, props);
+  }
+
+  _createClass(Test, [{
+    key: "render",
+    value: function render() {
+      return /*#__PURE__*/React.createElement("h2", null, "TEST!");
+    }
+  }]);
+
+  return Test;
+}(React.Component);
+var Banner = /*#__PURE__*/function (_React$Component2) {
+  _inherits(Banner, _React$Component2);
+
+  var _super2 = _createSuper(Banner);
+
+  function Banner() {
+    _classCallCheck(this, Banner);
+
+    return _super2.apply(this, arguments);
+  }
+
+  _createClass(Banner, [{
+    key: "render",
+    value: function render() {
+      return /*#__PURE__*/React.createElement("section", {
+        className: "hero is-info welcome is-small"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "hero-body"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "container"
+      }, /*#__PURE__*/React.createElement("h1", {
+        className: "title"
+      }, "Overview"), /*#__PURE__*/React.createElement("h2", {
+        className: "subtitle"
+      }, "Summary of Internal Records"))));
+    }
+  }]);
+
+  return Banner;
+}(React.Component);
+var Tiles = /*#__PURE__*/function (_React$Component3) {
+  _inherits(Tiles, _React$Component3);
+
+  var _super3 = _createSuper(Tiles);
+
+  function Tiles(props) {
+    var _this;
+
+    _classCallCheck(this, Tiles);
+
+    _this = _super3.call(this, props);
+    _this.state = {
+      tile1: '',
+      tile2: '',
+      tile3: '',
+      tile4: ''
+    };
+    _this.getRequest = _this.getRequest.bind(_assertThisInitialized(_this)); // this.requestUrl = this.requestUrl.bind(this);
+
+    return _this;
+  }
+
+  _createClass(Tiles, [{
+    key: "componentDidMount",
+    value: function componentDidMount() {
+      var _this2 = this;
+
+      _client__WEBPACK_IMPORTED_MODULE_2___default()({
+        method: 'GET',
+        path: '/api/users/id/user/total'
+      }).done(function (response) {
+        _this2.setState({
+          tile1: response.entity
+        });
+      });
+      _client__WEBPACK_IMPORTED_MODULE_2___default()({
+        method: 'GET',
+        path: '/api/users/search/countUsersByReportsToIsContaining?leaderId=none%20assigned'
+      }).done(function (response) {
+        _this2.setState({
+          tile2: response.entity
+        });
+      });
+    }
+  }, {
+    key: "getRequest",
+    value: function getRequest() {
+      var addresses = ['http://localhost:8080/api/users/id/user/total', 'http://localhost:8080/api/users/search/countUsersByReportsToIsContaining?leaderId=none%20assigned', 'localhost:8080/api/users/']; // axios.get(addresses[0], {
+      //     responseType: "text"
+      // })
+      //     .then(function (response) {
+      //         console.log(response);
+      //         this.setState({tile1: response});
+      //     })
+      //     .catch(function (error) {
+      //         console.log(error);
+      //     });
+      // //this.setState({tile2: this.requestUrl(addresses[1])});
+    }
+  }, {
+    key: "render",
+    value: function render() {
+      return /*#__PURE__*/React.createElement("section", {
+        className: "info-tiles"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "tile is-ancestor has-text-centered"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "tile is-parent"
+      }, /*#__PURE__*/React.createElement("article", {
+        className: "tile is-child box"
+      }, /*#__PURE__*/React.createElement("p", {
+        className: "title"
+      }, this.state.tile1), /*#__PURE__*/React.createElement("p", {
+        className: "subtitle"
+      }, "Users Total"))), /*#__PURE__*/React.createElement("div", {
+        className: "tile is-parent"
+      }, /*#__PURE__*/React.createElement("article", {
+        className: "tile is-child box"
+      }, /*#__PURE__*/React.createElement("p", {
+        className: "title"
+      }, this.state.tile2), /*#__PURE__*/React.createElement("p", {
+        className: "subtitle"
+      }, "Unassigned"))), /*#__PURE__*/React.createElement("div", {
+        className: "tile is-parent"
+      }, /*#__PURE__*/React.createElement("article", {
+        className: "tile is-child box"
+      }, /*#__PURE__*/React.createElement("p", {
+        className: "title has-text-danger"
+      }, "12"), /*#__PURE__*/React.createElement("p", {
+        className: "subtitle"
+      }, "Unpaid Orders"))), /*#__PURE__*/React.createElement("div", {
+        className: "tile is-parent"
+      }, /*#__PURE__*/React.createElement("article", {
+        className: "tile is-child box"
+      }, /*#__PURE__*/React.createElement("p", {
+        className: "title has-text-success"
+      }, "Online"), /*#__PURE__*/React.createElement("p", {
+        className: "subtitle"
+      }, "Server")))));
+    }
+  }]);
+
+  return Tiles;
+}(React.Component);
+var Overview = /*#__PURE__*/function (_React$Component4) {
+  _inherits(Overview, _React$Component4);
+
+  var _super4 = _createSuper(Overview);
+
+  function Overview() {
+    _classCallCheck(this, Overview);
+
+    return _super4.apply(this, arguments);
+  }
+
+  _createClass(Overview, [{
+    key: "render",
+    value: function render() {
+      return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Banner, null), /*#__PURE__*/React.createElement(Tiles, null));
+    }
+  }]);
+
+  return Overview;
+}(React.Component);
+var SideBar = /*#__PURE__*/function (_React$Component5) {
+  _inherits(SideBar, _React$Component5);
+
+  var _super5 = _createSuper(SideBar);
+
+  function SideBar() {
+    _classCallCheck(this, SideBar);
+
+    return _super5.apply(this, arguments);
+  }
+
+  _createClass(SideBar, [{
+    key: "render",
+    value: function render() {
+      return /*#__PURE__*/React.createElement("div", {
+        className: "column is-3 "
+      }, /*#__PURE__*/React.createElement("aside", {
+        className: "menu is-hidden-mobile"
+      }, /*#__PURE__*/React.createElement("p", {
+        className: "menu-label"
+      }, "General"), /*#__PURE__*/React.createElement("ul", {
+        className: "menu-list"
+      }, /*#__PURE__*/React.createElement("li", null, /*#__PURE__*/React.createElement("a", {
+        className: "is-active"
+      }, "Dashboard")), /*#__PURE__*/React.createElement(Directory, null)), /*#__PURE__*/React.createElement("p", {
+        className: "menu-label"
+      }, "Product Overview"), /*#__PURE__*/React.createElement("ul", {
+        className: "menu-list"
+      }, /*#__PURE__*/React.createElement("li", null, /*#__PURE__*/React.createElement("a", null, "Manage sectors"), /*#__PURE__*/React.createElement("ul", null, /*#__PURE__*/React.createElement("li", null, "Sector A"), /*#__PURE__*/React.createElement("li", null, "Sector B"), /*#__PURE__*/React.createElement("li", null, "Sector C"))))));
+    }
+  }]);
+
+  return SideBar;
+}(React.Component);
+var GenericButton = /*#__PURE__*/function (_React$Component6) {
+  _inherits(GenericButton, _React$Component6);
+
+  var _super6 = _createSuper(GenericButton);
+
+  function GenericButton(props) {
+    _classCallCheck(this, GenericButton);
+
+    return _super6.call(this, props);
+  }
+
+  _createClass(GenericButton, [{
+    key: "render",
+    value: function render() {
+      // form={this.props.formID}
+      return /*#__PURE__*/React.createElement("div", {
+        className: "columns"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "column is-10"
+      }), /*#__PURE__*/React.createElement("div", {
+        className: "column is-2 ml-3"
+      }, /*#__PURE__*/React.createElement(react_bulma_components__WEBPACK_IMPORTED_MODULE_0__["Button"], {
+        className: "is-info "
+      }, this.props.buttonText)));
+    }
+  }]);
+
+  return GenericButton;
+}(React.Component);
+var PostButton = /*#__PURE__*/function (_React$Component7) {
+  _inherits(PostButton, _React$Component7);
+
+  var _super7 = _createSuper(PostButton);
+
+  function PostButton(props) {
+    var _this3;
+
+    _classCallCheck(this, PostButton);
+
+    _this3 = _super7.call(this, props); // this.state = this.props;
+
+    _this3.createUser = _this3.createUser.bind(_assertThisInitialized(_this3));
+    return _this3;
+  }
+
+  _createClass(PostButton, [{
+    key: "createUser",
+    value: function createUser() {
+      var surname;
+      var name = this.props.userEntry.name;
+      var str = "" + name;
+
+      if (str.includes(' ')) {
+        var words = str.split(' ');
+        name = words[0];
+        surname = words[1];
+      }
+
+      var department = '' + this.props.userEntry.department;
+      var email = '' + this.props.userEntry.email;
+      var balance = '' + this.props.userEntry.balance;
+
+      if (this.props.formID === "userEntry") {
+        axios__WEBPACK_IMPORTED_MODULE_1___default.a.post('http://localhost:8080/api/users/new/user/create', {
+          userType: department,
+          email: email,
+          details: {
+            firstName: '' + name,
+            lastName: surname === "" || surname === " " || surname === null ? " " : '' + surname,
+            totalBalance: balance
+          }
+        }).then(function (response) {
+          console.log(response);
+        })["catch"](function (error) {
+          console.log(error);
+        });
+      }
+    }
+  }, {
+    key: "render",
+    value: function render() {
+      // form={this.props.formID}
+      return /*#__PURE__*/React.createElement("div", {
+        className: "columns"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "column is-10"
+      }), /*#__PURE__*/React.createElement("div", {
+        className: "column is-2 ml-3"
+      }, /*#__PURE__*/React.createElement("button", {
+        onClick: this.createUser,
+        className: "is-info "
+      }, this.props.buttonText)));
+    }
+  }]);
+
+  return PostButton;
+}(React.Component);
+var DeleteButton = /*#__PURE__*/function (_React$Component8) {
+  _inherits(DeleteButton, _React$Component8);
+
+  var _super8 = _createSuper(DeleteButton);
+
+  function DeleteButton(props) {
+    var _this4;
+
+    _classCallCheck(this, DeleteButton);
+
+    _this4 = _super8.call(this, props); // this.state = this.props;
+
+    _this4.deleteUser = _this4.deleteUser.bind(_assertThisInitialized(_this4));
+    return _this4;
+  }
+
+  _createClass(DeleteButton, [{
+    key: "deleteUser",
+    value: function deleteUser() {
+      axios__WEBPACK_IMPORTED_MODULE_1___default.a["delete"]('http://localhost:8080/api/users/' + this.props.userEntry.id + '/user/').then(function (response) {
+        console.log(response);
+      })["catch"](function (error) {
+        console.log(error);
+      });
+    }
+  }, {
+    key: "render",
+    value: function render() {
+      // form={this.props.formID}
+      return /*#__PURE__*/React.createElement("div", {
+        className: "columns"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "column is-10"
+      }), /*#__PURE__*/React.createElement("div", {
+        className: "column is-2 ml-3"
+      }, /*#__PURE__*/React.createElement("button", {
+        onClick: this.deleteUser,
+        className: "is-info "
+      }, this.props.buttonText)));
+    }
+  }]);
+
+  return DeleteButton;
+}(React.Component);
+var AppointButton = /*#__PURE__*/function (_React$Component9) {
+  _inherits(AppointButton, _React$Component9);
+
+  var _super9 = _createSuper(AppointButton);
+
+  function AppointButton(props) {
+    var _this5;
+
+    _classCallCheck(this, AppointButton);
+
+    _this5 = _super9.call(this, props);
+    _this5.appointUser = _this5.appointUser.bind(_assertThisInitialized(_this5));
+    return _this5;
+  }
+
+  _createClass(AppointButton, [{
+    key: "appointUser",
+    value: function appointUser() {
+      axios__WEBPACK_IMPORTED_MODULE_1___default.a.patch('http://localhost:8080/api/users/' + this.props.userEntry.subId + '/user/patch', new URLSearchParams({
+        leaderId: this.props.userEntry.id
+      })).then(function (response) {
+        console.log(response);
+      })["catch"](function (error) {
+        console.log(error);
+      });
+    }
+  }, {
+    key: "render",
+    value: function render() {
+      return /*#__PURE__*/React.createElement("div", {
+        className: "columns"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "column is-10"
+      }), /*#__PURE__*/React.createElement("div", {
+        className: "column is-2 ml-3"
+      }, /*#__PURE__*/React.createElement("button", {
+        onClick: this.appointUser,
+        className: "is-info "
+      }, this.props.buttonText)));
+    }
+  }]);
+
+  return AppointButton;
+}(React.Component); // noinspection DuplicatedCode
+
+var UpdateButton = /*#__PURE__*/function (_React$Component10) {
+  _inherits(UpdateButton, _React$Component10);
+
+  var _super10 = _createSuper(UpdateButton);
+
+  function UpdateButton(props) {
+    var _this6;
+
+    _classCallCheck(this, UpdateButton);
+
+    _this6 = _super10.call(this, props); // this.state = this.props;
+
+    _this6.updateUser = _this6.updateUser.bind(_assertThisInitialized(_this6));
+    return _this6;
+  }
+
+  _createClass(UpdateButton, [{
+    key: "updateUser",
+    value: function updateUser() {
+      var surname;
+      var name = this.props.userEntry.name;
+      var str = "" + name;
+
+      if (str.includes(' ')) {
+        var words = str.split(' ');
+        name = words[0];
+        surname = words[1];
+      }
+
+      var id = '' + this.props.userEntry.id;
+      var department = '' + this.props.userEntry.department;
+      var email = '' + this.props.userEntry.email;
+      var balance = '' + this.props.userEntry.balance;
+
+      if (this.props.formID === "userEntry") {
+        axios__WEBPACK_IMPORTED_MODULE_1___default.a.put('http://localhost:8080/api/users/' + id + '/user', {
+          userType: department,
+          email: email,
+          details: {
+            firstName: '' + name,
+            lastName: surname === "" || surname === " " || surname === null ? " " : '' + surname,
+            totalBalance: balance
+          }
+        }).then(function (response) {
+          console.log(response);
+        })["catch"](function (error) {
+          console.log(error);
+        });
+      }
+    }
+  }, {
+    key: "render",
+    value: function render() {
+      // form={this.props.formID}
+      return /*#__PURE__*/React.createElement("div", {
+        className: "columns"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "column is-10"
+      }), /*#__PURE__*/React.createElement("div", {
+        className: "column is-2 ml-3"
+      }, /*#__PURE__*/React.createElement("button", {
+        onClick: this.updateUser,
+        className: "is-info "
+      }, this.props.buttonText)));
+    }
+  }]);
+
+  return UpdateButton;
+}(React.Component);
+var IDFields = /*#__PURE__*/function (_React$Component11) {
+  _inherits(IDFields, _React$Component11);
+
+  var _super11 = _createSuper(IDFields);
+
+  function IDFields(props) {
+    var _this7;
+
+    _classCallCheck(this, IDFields);
+
+    //appoint, Id
+    _this7 = _super11.call(this, props);
+    _this7.state = {
+      id: '',
+      subId: ''
+    };
+    _this7.handleChange = _this7.handleChange.bind(_assertThisInitialized(_this7));
+    return _this7;
+  }
+
+  _createClass(IDFields, [{
+    key: "handleChange",
+    value: function handleChange(event) {
+      var target = event.target;
+      var value = target.value;
+      var ref = target.name;
+      this.setState(_defineProperty({}, ref, value));
+    }
+  }, {
+    key: "render",
+    value: function render() {
+      return /*#__PURE__*/React.createElement("section", null, /*#__PURE__*/React.createElement("div", {
+        className: "field is-horizontal"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "field-body"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "field"
+      }, /*#__PURE__*/React.createElement("p", {
+        className: "control is-expanded has-icons-left"
+      }, /*#__PURE__*/React.createElement("input", {
+        name: "id",
+        className: "input",
+        type: "text",
+        placeholder: "ID",
+        onChange: this.handleChange,
+        value: this.state.id
+      }), /*#__PURE__*/React.createElement("span", {
+        className: "icon is-small is-left"
+      }, /*#__PURE__*/React.createElement("i", {
+        className: "fa fa-id-card"
+      })))), this.props.appoint === true && /*#__PURE__*/React.createElement("div", {
+        className: "field"
+      }, /*#__PURE__*/React.createElement("p", {
+        className: "control is-expanded has-icons-left has-icons-right"
+      }, /*#__PURE__*/React.createElement("input", {
+        name: "subId",
+        className: "input",
+        type: "text",
+        placeholder: "Subordinate ID",
+        onChange: this.handleChange,
+        value: this.state.subId
+      }), /*#__PURE__*/React.createElement("span", {
+        className: "icon is-small is-left"
+      }, /*#__PURE__*/React.createElement("i", {
+        className: "fa fa-id-card"
+      })))))), this.props.appoint === false && /*#__PURE__*/React.createElement(DeleteButton, {
+        userEntry: this.state,
+        buttonText: "Delete"
+      }), this.props.appoint === true && /*#__PURE__*/React.createElement(AppointButton, {
+        userEntry: this.state,
+        buttonText: "Appoint"
+      }));
+    }
+  }]);
+
+  return IDFields;
+}(React.Component);
+var UpdateEntry = /*#__PURE__*/function (_React$Component12) {
+  _inherits(UpdateEntry, _React$Component12);
+
+  var _super12 = _createSuper(UpdateEntry);
+
+  function UpdateEntry(props) {
+    var _this8;
+
+    _classCallCheck(this, UpdateEntry);
+
+    _this8 = _super12.call(this, props);
+    _this8.state = {
+      id: '',
+      name: '',
+      email: '',
+      department: 'Business Development',
+      balance: ''
+    };
+    _this8.handleChange = _this8.handleChange.bind(_assertThisInitialized(_this8));
+    return _this8;
+  }
+
+  _createClass(UpdateEntry, [{
+    key: "handleChange",
+    value: function handleChange(event) {
+      var target = event.target;
+      var value = target.value;
+      var ref = target.name;
+      this.setState(_defineProperty({}, ref, value));
+    }
+  }, {
+    key: "render",
+    value: function render() {
+      return /*#__PURE__*/React.createElement("section", {
+        id: this.props.key
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "field is-horizontal"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "field-body"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "field"
+      }, /*#__PURE__*/React.createElement("p", {
+        className: "control is-expanded has-icons-left"
+      }, /*#__PURE__*/React.createElement("input", {
+        name: "id",
+        className: "input",
+        type: "text",
+        placeholder: "ID",
+        onChange: this.handleChange,
+        value: this.state.id
+      }), /*#__PURE__*/React.createElement("span", {
+        className: "icon is-small is-left"
+      }, /*#__PURE__*/React.createElement("i", {
+        className: "fa fa-id-card"
+      })))))), /*#__PURE__*/React.createElement("div", {
+        className: "field is-horizontal is-narrow"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "field-label is-small"
+      }, /*#__PURE__*/React.createElement("label", {
+        className: "label"
+      }, "Information")), /*#__PURE__*/React.createElement("div", {
+        className: "field-body"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "field"
+      }, /*#__PURE__*/React.createElement("p", {
+        className: "control is-expanded has-icons-left"
+      }, /*#__PURE__*/React.createElement("input", {
+        name: "name",
+        className: "input",
+        type: "text",
+        placeholder: "Name",
+        onChange: this.handleChange,
+        value: this.state.name
+      }), /*#__PURE__*/React.createElement("span", {
+        className: "icon is-small is-left"
+      }, /*#__PURE__*/React.createElement("i", {
+        className: "fa fa-user"
+      })))), /*#__PURE__*/React.createElement("div", {
+        className: "field"
+      }, /*#__PURE__*/React.createElement("p", {
+        className: "control is-expanded has-icons-left has-icons-right"
+      }, /*#__PURE__*/React.createElement("input", {
+        name: "email",
+        className: "input is-success",
+        type: "email",
+        placeholder: "Email",
+        onChange: this.handleChange,
+        value: this.state.email
+      }), /*#__PURE__*/React.createElement("span", {
+        className: "icon is-small is-left"
+      }, /*#__PURE__*/React.createElement("i", {
+        className: "fa fa-envelope"
+      })))))), /*#__PURE__*/React.createElement("div", {
+        className: "field is-horizontal is-narrow"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "field-label is-small"
+      }, /*#__PURE__*/React.createElement("label", {
+        className: "label"
+      }, "Department")), /*#__PURE__*/React.createElement("div", {
+        className: "field-body"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "field"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "control"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "select is-fullwidth"
+      }, /*#__PURE__*/React.createElement("select", {
+        name: "department",
+        value: this.state.department,
+        onChange: this.handleChange
+      }, /*#__PURE__*/React.createElement("option", {
+        value: "Business Development"
+      }, "Business Development"), /*#__PURE__*/React.createElement("option", {
+        value: "Marketing"
+      }, "Marketing"), /*#__PURE__*/React.createElement("option", {
+        value: "Sales"
+      }, "Sales"))))), /*#__PURE__*/React.createElement("div", {
+        className: "field"
+      }, /*#__PURE__*/React.createElement("p", {
+        className: "control is-expanded has-icons-left"
+      }, /*#__PURE__*/React.createElement("input", {
+        name: "balance",
+        className: "input",
+        type: "text",
+        placeholder: "Balance",
+        value: this.state.balance,
+        onChange: this.handleChange
+      }), /*#__PURE__*/React.createElement("span", {
+        className: "icon is-small is-left"
+      }, /*#__PURE__*/React.createElement("i", {
+        className: "fa fa-money"
+      })))))), /*#__PURE__*/React.createElement("div", {
+        className: "field is-horizontal"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "field-body"
+      }, /*#__PURE__*/React.createElement("div", {
+        className: "field"
+      }, /*#__PURE__*/React.createElement(UpdateButton, {
+        userEntry: this.state,
+        formID: "userEntry",
+        buttonText: this.props.buttonClass
+      })))));
+    }
+  }]);
+
+  return UpdateEntry;
+}(React.Component);
 
 /***/ }),
 

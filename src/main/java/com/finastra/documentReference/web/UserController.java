@@ -8,11 +8,13 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 
+@CrossOrigin
 @RestController
-@RequestMapping(path = "/users/{userId}/user")
+@RequestMapping(path = "/api/users/{userId}/user")
 public class UserController {
     private UserRepository userRepository;
 
@@ -45,7 +47,6 @@ public class UserController {
                     userId, newUser.getEmail(), newUser.getDetails()));
         }
     }
-
     /**
      * Lookup a page of users
      */
@@ -54,19 +55,11 @@ public class UserController {
                                  Pageable pageable){
         return userRepository.findById(userId, pageable);
     }
-
-    /**
-     * Calculate the average Score of a Tour.
-     */
-//    @GetMapping(path = "/average")
-//    public Map<String, Double> getAverage(@PathVariable(value = "tourId") String tourId) {
-//        verifyUser(tourId);
-//        return Map.of("average",tourRatingRepository.findByTourId(tourId).stream()
-//                .mapToInt(TourRating::getScore).average()
-//                .orElseThrow(() ->
-//                        new NoSuchElementException("Tour has no Ratings")));
-//    }
-//
+    @GetMapping(path="/search")
+    public Page<User> getUserByDepartment(@PathVariable(value = "userId") String userId,
+                              Pageable pageable){
+        return userRepository.findById(userId, pageable);
+    }
     /**
      * Update user details
      */
@@ -75,7 +68,7 @@ public class UserController {
                                     @RequestBody User newData) {
         User user = verifyAndGetUser(tourId);
         user.setUserType(newData.getUserType());
-        user.setReportsTo(newData.getReportsTo());
+        user.setReportsTo((newData.getReportsTo()==null) ? "none assigned" : newData.getReportsTo());
         user.setEmail(newData.getEmail());
         user.setDetails(newData.getDetails());
         return userRepository.save(user);
@@ -83,18 +76,25 @@ public class UserController {
     /**
      * Update reporting assignment
      */
-    @PatchMapping
+    @PatchMapping(path = "/patch")
     public User updateAssignment(@PathVariable(value = "userId") String userId,
-                                      @RequestBody User newData) {
+                                      @RequestParam String leaderId) {
         User user = verifyAndGetUser(userId);
-        if (newData.getReportsTo() != null) {
-            user.setReportsTo(newData.getReportsTo());
-        }
-        if (newData.getEmail() != null) {
-            user.setEmail(newData.getEmail());
+        if (leaderId != null) {
+            user.setReportsTo(leaderId);
         }
         return userRepository.save(user);
     }
+
+//    @PatchMapping
+//    public User updateAssignment(@PathVariable(value = "userId") String userId,
+//                                 @RequestBody User newData) {
+//        User user = verifyAndGetUser(userId);
+//        if (newData.getReportsTo() != null) {
+//            user.setReportsTo(newData.getReportsTo());
+//        }
+//        return userRepository.save(user);
+//    }
 
     /**
      * Delete a user
@@ -114,5 +114,23 @@ public class UserController {
         return ex.getMessage();
 
     }
+    @CrossOrigin
+    @GetMapping(path = "/total")
+    public int getAllUsers(@PathVariable(value = "userId") String tourId){
+        var list = List.of("Business Development", "Marketing", "Sales", "none assigned");
+        int num = 0;
+        for (var item: list ) {
+            num += userRepository.countByUserType(item);
+        }
+        return num;
+    }
+//    @GetMapping(path = "/average")
+//    public Map<String, Double> getAllCount(@PathVariable(value = "userId") String tourId) {
+//        verifyUser(tourId);
+//        return Map.of("average",tourRatingRepository.findByTourId(tourId).stream()
+//                .mapToInt(TourRating::getScore).average()
+//                .orElseThrow(() ->
+//                        new NoSuchElementException("Tour has no Ratings")));
+//    }
 
 }

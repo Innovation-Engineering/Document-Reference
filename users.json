@@ -1,16 +1,23 @@
 [
     {
-        "userType":"customer",
-        "firstName":"Ray",
+        "userType":"Business Development",
+        "firstName":"Richard",
         "lastName":"Ford",
-        "email": "anon@gmail.com",
-        "totalBalance":"0.00"
+        "email": "richard@gmail.com",
+        "totalBalance":"8000"
     },
     {
-        "userType":"manager",
+        "userType":"Marketing",
+        "firstName":"Sergei",
+        "lastName":"Akron",
+        "email": "sergei@gmail.com",
+        "totalBalance":"1235"
+    },
+    {
+        "userType":"Sales",
         "firstName":"Jackson",
         "lastName":"Pilfer",
-        "email": "anon@gmail.com",
+        "email": "jackson@gmail.com",
         "totalBalance":"100.00"
     }
 ]  

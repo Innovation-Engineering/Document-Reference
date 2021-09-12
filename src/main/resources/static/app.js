@@ -1,58 +1,22 @@
 const React = require('react');
 const ReactDOM = require('react-dom');
 const client = require('./client');
-import {
-    BrowserRouter as Router,
-    Switch,
-    Route,
-    Link
-} from "react-router-dom";
+const axios = require('axios').default;
 
-class Directory extends React.Component{
-    render() {
-        return (
-            <Router>
-                <div>
-                    <nav>
-                        <ul>
-                            <li>
-                                <Link to="/">Index</Link>
-                            </li>
-                            <li>
-                                <Link to="/home">Home</Link>
-                            </li>
-                            <li>
-                                <Link to="/customers">Customers</Link>
-                            </li>
-                        </ul>
-                    </nav>
+import { GenericButton, PostButton, UpdateEntry, IDFields, Test, Overview, Banner} from "./components/html/container";
+import { User } from "./components/domain/structure";
+import { Button } from 'react-bulma-components';
+import { BrowserRouter as Router, Switch, useHistory, Route, Link } from "react-router-dom";
 
-                    {/* A <Switch> looks through its children <Route>s and
-            renders the first one that matches the current URL. */}
-                    <Switch>
-                        <Route path="/home">
-                            <Index/>
-                        </Route>
-                        <Route path="/customers">
-                            <Customers/>
-                        </Route>
-                        <Route path="/index">
-                            <Index/>
-                        </Route>
-                    </Switch>
-                </div>
-            </Router>
-        )
-    }
-}
+
 class App extends React.Component {
     constructor(props) {
         super(props);
-        this.state = {ulist: [],
+        this.state = {
+            ulist: [],
             users: [],
             currentView: "index"
         };
-
     }
 
     componentDidMount() {
@@ -67,29 +31,110 @@ class App extends React.Component {
     }
     render(){
         return(
-            <table className="table is-bordered is-narrow is-hoverable">
-                <tbody>
-                {/*{*/}
-                {/*    this.state.currentView === "index" ?*/}
-                {/*        <ViewOne onClick={page => this.setState({ currentView: this.state.currentView = page })} /> :*/}
-                {/*        <ViewTwo onClick={page => this.setState({ currentView: this.state.currentView = page })} />*/}
-                {/*}*/}
-                <tr>
-                    <th>ID</th>
-                    <th>Leader</th>
-                    <th>User Type</th>
-                    <th>Email</th>
-                    <th>Details</th>
-                </tr>
-                {this.renderRow()}
-                </tbody>
-            </table>
+            <div  className="columns">
+                {/*<SideBar/>*/}
+
+                <div className="column is-3 ">
+                    <aside className="menu is-hidden-mobile">
+                        <p className="menu-label">
+                            General
+                        </p>
+                        <ul className="menu-list">
+                            <Link to="/home">Dashboard</Link>
+                            <Link to="/users">Users</Link>
+                        </ul>
+                        <p className="menu-label">
+                            Product Overview
+                        </p>
+                        <ul className="menu-list">
+                            <li>
+                                Manage sectors
+                                <ul>
+                                    <li><Link to="/business">Business Development</Link></li>
+                                    <li><Link to="/marketing">Marketing</Link></li>
+                                    <li><Link to="/sales">Sales</Link></li>
+                                </ul>
+                            </li>
+                        </ul>
+                    </aside>
+                </div>
+                <div className="column is-9">
+                    <nav className="breadcrumb" aria-label="breadcrumbs">
+                        <ul>
+                            <li><a href="/">_____________</a></li>
+                            {/*<li className="is-active"><a href="home" aria-current="page">Home</a></li>*/}
+                        </ul>
+                    </nav>
+                    <Switch>
+                        <Route path="/users:control">
+                        </Route>
+                        <Route path="/users">
+                            <UserControls users={this.state.users}/>
+                        </Route>
+                        <Route path="/business">
+                            <Table key={"business"} url={"/api/users/search/findByUserType?type=Business%20Development"}/>
+                        </Route>
+                        <Route path="/marketing">
+                            <Table key={"marketing"} url={"/api/users/search/findByUserType?type=Marketing"}/>
+                        </Route>
+                        <Route path="/sales">
+                            <Table key={"sales"} url={"/api/users/search/findByUserType?type=Sales"}/>
+                        </Route>
+                        <Route path="/">
+                            <Overview/>
+                            {/*<Table users={this.state.users}/>*/}
+                        </Route>
+
+                    </Switch>
+                </div>
+            </div>
+        );
+    }
+}
+
+class Table extends React.Component {
+    constructor(props) {
+        super(props);
+        this.state = {
+            body: [],
+            rows: []
+        };
+    }
+    componentDidMount() {
+        client({method: 'GET', path: this.props.url }).done(response => {
+            this.setState({body: response.entity._embedded.users});
+            let user;
+            const usersList = this.state.body.map(users =>
+                user = { key: users._links.self.href, values:users}
+            );
+            this.setState({ rows: usersList });
+        });
+    }
+
+    render(){
+        return(
+            <div className="table-container">
+                <table className="table is-bordered is-narrow is-hoverable is-striped">
+                    <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Leader</th>
+                        <th>User Type</th>
+                        <th>Email</th>
+                        <th>Details</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {this.renderRow()}
+                    </tbody>
+                </table>
+            </div>
         )
     }
 
     renderRow() {
         let person, data, key;
-        let row = this.state.users.map((user, index) => {
+        let row = this.state.rows.map((user, index) => {
             try{
                 data = user["values"];
                 key = user["key"];
@@ -112,140 +157,172 @@ class App extends React.Component {
         return row;
     }
 }
-
-class Overview extends React.Component {
+class UserControls extends React.Component {
+    constructor(props) {
+        super(props);
+    }
     render() {
-        return(
-            <section className="hero is-info welcome is-small">
-                <div className="hero-body">
-                    <div className="container">
-                        <h1 className="title">
-                            Overview
-                        </h1>
-                        <h2 className="subtitle">
-                            Glance of internal statistics
-                        </h2>
-                    </div>
+        return (
+            <section>
+                <Router>
+                <div className="field has-addons">
+                    <p className="control">
+                        <Button className="button" to="/user/create" renderAs={Link}>
+                    <span className="icon is-small">
+                        <i className="fa fa-plus-square"/>
+                    </span>
+                            <span>Create</span>
+                        </Button>
+                    </p>
+                    <p className="control">
+                        <Button className="button" to="/user/update" renderAs={Link}>
+                    <span className="icon is-small">
+                        <i className="fa fa-pencil-square-o"/>
+                    </span>
+                            <span>Update</span>
+                        </Button>
+                    </p>
+                    <p className="control">
+                        <Button className="button" to="/user/delete" renderAs={Link}>
+                            <span className="icon is-small">
+                            <i className="fa fa-trash"/>
+                            </span>
+                            <span>Delete</span>
+                        </Button>
+                    </p>
+        {/*            <p className="control">*/}
+        {/*                <Button className="button" to="/user/search" renderAs={Link}>*/}
+        {/*<span className="icon is-small">*/}
+        {/*<i className="fa fa-search"/>*/}
+        {/*</span>*/}
+        {/*                    <span>Search</span>*/}
+        {/*                </Button>*/}
+        {/*            </p>*/}
+                    <p className="control">
+                        <Button className="button" to="/user/appoint" renderAs={Link}>
+        <span className="icon is-small">
+        <i className="fa fa-level-up"/>
+        </span>
+                            <span>Appoint</span>
+                        </Button>
+                    </p>
                 </div>
+                <div>
+                    <Switch>
+                        <Route path="/user/create">
+                            <UserEntry buttonClass={"Submit"} />
+                        </Route>
+                        <Route path="/user/update">
+                            <UpdateEntry buttonClass={"Submit"}/>
+                        </Route>
+                        <Route path="/user/delete">
+                            <IDFields appoint={false} />
+
+                            {/*<GenericButton buttonText={"Submit"}/>*/}
+                        </Route>
+                        {/*<Route path="/user/search">*/}
+
+                        {/*    /!*<Table key={"search"} url={"localhost:8080/api/users'"}/>*!/*/}
+                        {/*</Route>*/}
+                        <Route path="/user/appoint">
+
+                            <IDFields appoint={true} />
+                        </Route>
+                    </Switch>
+                </div>
+                </Router>
             </section>
-        )
+                    );
     }
 }
-class Tiles extends React.Component{
-    render(){
+class UserEntry extends React.Component {
+    constructor(props) {
+        super(props);
+        this.state = {
+            name: '',
+            email: '',
+            department: 'Business Development',
+            balance: ''
+        };
+        this.handleChange = this.handleChange.bind(this);
+    }
+    handleChange(event) {
+        const target = event.target;
+        const value = target.value;
+        const ref = target.name;
+        this.setState({
+            [ref]: value
+        });
+    }
+    render() {
         return (
-            <section className="info-tiles">
-                <div className="tile is-ancestor has-text-centered">
-                    <div className="tile is-parent">
-                        <article className="tile is-child box">
-                            <p className="title">100</p>
-                            <p className="subtitle">Users</p>
-                        </article>
+            <section>
+
+                <div className="field is-horizontal is-narrow">
+                    <div className="field-label is-small">
+                        <label className="label">Information</label>
                     </div>
-                    <div className="tile is-parent">
-                        <article className="tile is-child box">
-                            <p className="title">100</p>
-                            <p className="subtitle">Products</p>
-                        </article>
+                    <div className="field-body">
+                        <div className="field">
+                            <p className="control is-expanded has-icons-left">
+                                <input name="name" className="input" type="text" placeholder="Name" onChange={this.handleChange} value={this.state.name}  />
+                            <span className="icon is-small is-left">
+                            <i className="fa fa-user"></i>
+                            </span>
+                            </p>
+                        </div>
+
+                        <div className="field">
+                            <p className="control is-expanded has-icons-left has-icons-right">
+                                <input name="email" className="input is-success" type="email" placeholder="Email" onChange={this.handleChange} value={this.state.email}/>
+                                <span className="icon is-small is-left">
+                                    <i className="fa fa-envelope"></i>
+                                </span>
+                            </p>
+                        </div>
                     </div>
-                    <div className="tile is-parent">
-                        <article className="tile is-child box">
-                            <p className="title">100</p>
-                            <p className="subtitle">Unpaid Orders</p>
-                        </article>
+                </div>
+                <div className="field is-horizontal is-narrow">
+                    <div className="field-label is-small">
+                        <label className="label">Department</label>
                     </div>
-                    <div className="tile is-parent">
-                        <article className="tile is-child box">
-                            <p className="title">100</p>
-                            <p className="subtitle">Exceptions</p>
-                        </article>
+                    <div className="field-body">
+                        <div className="field">
+                            <div className="control">
+                                <div className="select is-fullwidth">
+                                    <select name="department" value={this.state.department} onChange={this.handleChange}>
+                                        <option value={"Business Development"}>Business Development</option>
+                                        <option value={"Marketing"}>Marketing</option>
+                                        <option value={"Sales"}>Sales</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="field">
+                            <p className="control is-expanded has-icons-left">
+                                <input name={"balance"} className="input" type="text" placeholder="Balance" value={this.state.balance} onChange={this.handleChange}/>
+                            <span className="icon is-small is-left">
+                            <i className="fa fa-money"></i>
+                            </span>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div className="field is-horizontal">
+                    <div className="field-body">
+                        <div className="field">
+                            <PostButton userEntry={this.state} formID={"userEntry"}  buttonText={ this.props.buttonClass }/>
+                        </div>
                     </div>
                 </div>
             </section>
         );
     }
 }
-class Index extends React.Component{
-    render(){
-        return <h2>Index</h2>;
-    }
-}
 
-class Customers extends React.Component {
-    render(){
-        return <h2>Customers</h2>;
-    }
-}
-
-class Index2 extends React.Component{
-    constructor(props) {
-        super(props);
-        this.state = {
-            currentView: "index"
-        };
-
-    }
-    handleClick = (page) => {
-        this.setState({ currentView : page});
-    }
-    render() {
-        return (
-            <div>
-                Index <br />
-                <button onClick={() => this.handleClick("home")}>Go to HOME</button>
-            </div>
-        )
-    }
-}
-
-class User{
-    get id() {
-        let str = this._id.substring(this._id.lastIndexOf("/") + 1, this._id.length);
-        return str;
-    }
-
-    get reportsTo() {
-        return this._reportsTo;
-    }
-
-    get userType() {
-        return this._userType;
-    }
-
-    get email() {
-        return this._email;
-    }
-
-    get details() {
-        return JSON.stringify(this._details);
-        //console.log(this._details.values);
-        //return this._details.values.forEach( it => { str += it} );
-    }
-    constructor(id, reportsTo, userType, email, details) {
-        this._id = id;
-        this._reportsTo = reportsTo;
-        this._userType = userType;
-        this._email = email;
-        this._details = details;
-    }
-    print(){
-        console.log( this.id + this.userType + this.email + this.details);
-    }
-
-}
 ReactDOM.render(
-    <Overview/>,
-    document.getElementById('overview')
-)
-ReactDOM.render(
-    <Tiles/>,
-    document.getElementById('tiles')
-)
-// ReactDOM.render(
-//         <Directory/>,
-//     document.getElementById('directory')
-// )
-ReactDOM.render(
-    <App/>,
-    document.getElementById('app')
-)
+    <Router>
+        <App />
+    </Router>,
+    document.getElementById("app")
+);
