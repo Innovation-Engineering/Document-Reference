@@ -36,7 +36,6 @@ public class DocumentReferenceApplication implements CommandLineRunner {
 		createUser("users.json");
 	}
 	public void createUser(String fileImport) throws IOException {
-		//System.out.println(ReadUsers.read(fileImport).stream().filter());
 		ReadUsers.read(fileImport).forEach(readUser ->
 				userService.createUser(readUser.getUserType(),
 						(readUser.getReportsTo() != null) ? readUser.getReportsTo() : "none assigned" ,
@@ -44,13 +43,10 @@ public class DocumentReferenceApplication implements CommandLineRunner {
 	}
 
 	private static class ReadUsers {
-		//fields
 		private String userType;
 		private String reportsTo;
 		private String email;
-
 		Map<String, String> details;
-		//reader
 		ReadUsers(Map<String, String> record){
 			this.userType = record.get("userType");
 			this.reportsTo = record.get("reportsTo");
@@ -72,6 +68,7 @@ public class DocumentReferenceApplication implements CommandLineRunner {
 			return records.stream().map(ReadUsers::new)
 					.collect(Collectors.toList());
 		}
+
 		public String getUserType(){
 			return userType;
 		}

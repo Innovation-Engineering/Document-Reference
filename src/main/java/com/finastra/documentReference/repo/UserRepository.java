@@ -16,5 +16,4 @@ public interface UserRepository extends MongoRepository<User, String> {
     Page<User> findByReportsTo(@Param("reports")String reports, Pageable pageable);
     Page<User> findByUserType(@Param("type")String type, Pageable pageable);
     Page<User> findAllByUserTypeIsNotNull(@Param("type")String type, Pageable pageable);
-    //List<User> findByUserType(String userType);
 }

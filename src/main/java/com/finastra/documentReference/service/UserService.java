@@ -23,6 +23,4 @@ public class UserService {
     public long total() {
         return userRepository.count();
     }
-    //        TourPackage tourPackage = tourPackageRepository.findByName(tourPackageName).orElseThrow(()->
-    //                new RuntimeException("Tour package does not exist: " + tourPackageName));
 }

@@ -48,7 +48,7 @@ public class UserController {
         }
     }
     /**
-     * Lookup a page of users
+     * Get users page
      */
     @GetMapping
     public Page<User> getUser(@PathVariable(value = "userId") String userId,
@@ -86,16 +86,6 @@ public class UserController {
         return userRepository.save(user);
     }
 
-//    @PatchMapping
-//    public User updateAssignment(@PathVariable(value = "userId") String userId,
-//                                 @RequestBody User newData) {
-//        User user = verifyAndGetUser(userId);
-//        if (newData.getReportsTo() != null) {
-//            user.setReportsTo(newData.getReportsTo());
-//        }
-//        return userRepository.save(user);
-//    }
-
     /**
      * Delete a user
      */
@@ -124,13 +114,5 @@ public class UserController {
         }
         return num;
     }
-//    @GetMapping(path = "/average")
-//    public Map<String, Double> getAllCount(@PathVariable(value = "userId") String tourId) {
-//        verifyUser(tourId);
-//        return Map.of("average",tourRatingRepository.findByTourId(tourId).stream()
-//                .mapToInt(TourRating::getScore).average()
-//                .orElseThrow(() ->
-//                        new NoSuchElementException("Tour has no Ratings")));
-//    }
 
 }
