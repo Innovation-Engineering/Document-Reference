@@ -45,3 +45,4 @@ data/diagnostic.data/metrics.interim
 node_modules
 *.interim
 *.interim
+data/journal/WiredTigerLog.0000000010
