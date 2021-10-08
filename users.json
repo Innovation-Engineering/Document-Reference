@@ -19,5 +19,26 @@
         "lastName":"Pilfer",
         "email": "jackson@gmail.com",
         "totalBalance":"100.00"
+    },
+    {
+        "userType":"Sales",
+        "firstName":"Anthony",
+        "lastName":"Montgomery",
+        "email": "anthony@gmail.com",
+        "totalBalance":"100.00"
+    },
+    {
+        "userType":"Sales",
+        "firstName":"Christopher",
+        "lastName":"Calcium",
+        "email": "Chris@gmail.com",
+        "totalBalance":"1000.00"
+    },
+    {
+        "userType":"Marketing",
+        "firstName":"Hilary",
+        "lastName":"Winston",
+        "email": "hilary@gmail.com",
+        "totalBalance":"5900.00"
     }
 ]  

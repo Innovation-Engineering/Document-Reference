@@ -2,6 +2,8 @@ package com.finastra.documentReference.web;
 
 import com.finastra.documentReference.data.User;
 import com.finastra.documentReference.repo.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -11,11 +13,14 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Optional;
+import java.util.stream.Collectors;
 
 @CrossOrigin
 @RestController
 @RequestMapping(path = "/api/users/{userId}/user")
 public class UserController {
+    private static final Logger LOGGER = LoggerFactory.getLogger(UserController.class);
     private UserRepository userRepository;
 
     @Autowired
@@ -38,6 +43,7 @@ public class UserController {
     @ResponseStatus(HttpStatus.CREATED)
     public void assignNewUser(@PathVariable(value = "userId") String userId,
                               @RequestBody User newUser) {
+        LOGGER.info("Create user {}, {}", userId, newUser.getEmail());
         if(userId.equals("new")){
             userRepository.save(new User(newUser.getUserType(),
                     "none assigned", newUser.getEmail(), newUser.getDetails()));
@@ -51,14 +57,8 @@ public class UserController {
      * Get users page
      */
     @GetMapping
-    public Page<User> getUser(@PathVariable(value = "userId") String userId,
-                                 Pageable pageable){
-        return userRepository.findById(userId, pageable);
-    }
-    @GetMapping(path="/search")
-    public Page<User> getUserByDepartment(@PathVariable(value = "userId") String userId,
-                              Pageable pageable){
-        return userRepository.findById(userId, pageable);
+    public Optional<User> getUser(@PathVariable(value = "userId") String userId){
+        return userRepository.findById(userId);
     }
     /**
      * Update user details
@@ -104,6 +104,12 @@ public class UserController {
         return ex.getMessage();
 
     }
+    @GetMapping(path = "/all")
+    public List<String> listIds() {
+        return userRepository.findAll().stream()
+                .map(user -> user.getId())
+                .collect(Collectors.toList());
+    }
     @CrossOrigin
     @GetMapping(path = "/total")
     public int getAllUsers(@PathVariable(value = "userId") String tourId){
@@ -114,5 +120,4 @@ public class UserController {
         }
         return num;
     }
-
 }
